@@ -1,7 +1,8 @@
 import Redis from "ioredis";
+import { Redis as RedisKV } from "@upstash/redis";
 
 export class RedisService {
-  private keyValueClient: Redis;
+  private keyValueClient: RedisKV;
   private publisherClient: Redis;
   private subscriberClient: Redis;
 
@@ -11,12 +12,15 @@ export class RedisService {
       port: parseInt(process.env.REDIS_PORT || "6379", 10),
       password: process.env.REDIS_PASSWORD || undefined,
     };
+    const redisConfigKV = {
+      url: process.env.REDIS_KV_REST_API_URL || "no val",
+      token: process.env.REDIS_KV_REST_API_TOKEN || "no val",
+    };
 
-    this.keyValueClient = new Redis(redisConfig);
+    this.keyValueClient = new RedisKV(redisConfigKV);
     this.publisherClient = new Redis(redisConfig);
     this.subscriberClient = new Redis(redisConfig);
 
-    this.handleEvents(this.keyValueClient, "Key-Value Client");
     this.handleEvents(this.publisherClient, "Publisher Client");
     this.handleEvents(this.subscriberClient, "Subscriber Client");
   }
@@ -74,7 +78,6 @@ export class RedisService {
   // Cleanup
   async disconnect() {
     await Promise.all([
-      this.keyValueClient.quit(),
       this.publisherClient.quit(),
       this.subscriberClient.quit(),
     ]);
