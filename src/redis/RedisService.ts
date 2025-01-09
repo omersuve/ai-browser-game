@@ -52,6 +52,24 @@ export class RedisService {
     return this.keyValueClient.lrange(key, start, stop);
   }
 
+  // Set Operations
+  async sadd(key: string, members: string[]): Promise<number> {
+    if (members.length === 0) {
+      throw new Error("No members to add to the set");
+    }
+
+    // Pass the first member and the rest as separate arguments
+    return this.keyValueClient.sadd(key, members[0], ...members.slice(1));
+  }
+
+  async smembers(key: string): Promise<string[]> {
+    return this.keyValueClient.smembers(key);
+  }
+
+  async sismember(key: string, member: string): Promise<number> {
+    return this.keyValueClient.sismember(key, member);
+  }
+
   // Publish to a channel
   async publish(channel: string, message: string) {
     return this.publisherClient.publish(channel, message);
