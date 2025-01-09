@@ -1,18 +1,34 @@
 import ApiClient from "../utils/ApiClient";
 import TimeUtils from "../utils/TimeUtils";
 import { RedisService } from "../redis/RedisService";
-import { Pool } from "pg"; // For database queries
-import { Session, Round } from "../types";
+import { Pool } from "pg";
+import { Session, Round, Player } from "../types";
+import LobbyService from "../services/LobbyService";
+import ForumService from "../services/ForumService";
+import PlayerService from "../services/PlayerService";
 
 export class RitualWorker {
   private db: Pool;
   private redis: RedisService;
   private apiClient: ApiClient;
+  private lobbyService: LobbyService;
+  private forumService: ForumService;
+  private playerService: PlayerService;
 
-  constructor(db: Pool, redis: RedisService, apiClient: ApiClient) {
+  constructor(
+    db: Pool,
+    redis: RedisService,
+    apiClient: ApiClient,
+    lobbyService: LobbyService,
+    forumService: ForumService,
+    playerService: PlayerService
+  ) {
     this.db = db;
     this.redis = redis;
     this.apiClient = apiClient;
+    this.lobbyService = lobbyService;
+    this.forumService = forumService;
+    this.playerService = playerService;
   }
 
   // Start monitoring sessions and rounds
@@ -118,6 +134,22 @@ export class RitualWorker {
   // Handle session start
   private async handleSessionStart(session: Session) {
     console.log(`Session ${session.id} started.`);
+
+    // Distribute players into lobbies
+    const lobbies = await this.playerService.distributePlayersToLobbies(
+      session.id,
+      session.max_total_players
+    );
+
+    // Create lobbies in Redis
+    for (const { lobbyId, players } of lobbies) {
+      await this.lobbyService.createLobby(
+        session.id,
+        lobbyId,
+        players // Pass the array of players directly
+      );
+    }
+
     await this.redis.publish(
       "sessions",
       JSON.stringify({ type: "SESSION_START", sessionId: session.id })
@@ -129,6 +161,7 @@ export class RitualWorker {
     console.log(
       `Round ${round.round_number} started for session ${session.id}.`
     );
+
     // Example: Trigger AI API and publish updates
     const aiResponse = await this.apiClient.post(`/ai/decision`, {
       sessionId: session.id,
@@ -155,5 +188,13 @@ export class RitualWorker {
       "sessions",
       JSON.stringify({ type: "SESSION_END", sessionId: session.id })
     );
+  }
+
+  private async fetchPlayers(sessionId: number): Promise<Player[]> {
+    const result = await this.db.query<Player>(
+      `SELECT * FROM players WHERE session_id = $1`,
+      [sessionId]
+    );
+    return result.rows;
   }
 }

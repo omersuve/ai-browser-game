@@ -31,11 +31,11 @@ export class RedisService {
   }
 
   // Key-Value Operations
-  async set(key: string, value: string) {
+  async set(key: string, value: string): Promise<string | null> {
     return this.keyValueClient.set(key, value);
   }
 
-  async get(key: string) {
+  async get(key: string): Promise<string | null> {
     return this.keyValueClient.get(key);
   }
 

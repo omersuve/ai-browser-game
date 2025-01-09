@@ -14,7 +14,11 @@ export default class LobbyService {
    * @param sessionId - The session ID.
    * @param lobbyId - The unique ID for the lobby.
    */
-  async createLobby(sessionId: number, lobbyId: number): Promise<void> {
+  async createLobby(
+    sessionId: number,
+    lobbyId: number,
+    players: Player[]
+  ): Promise<void> {
     const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
     const exists = await this.redisService.exists(lobbyKey);
 
@@ -26,7 +30,7 @@ export default class LobbyService {
     const lobby: Lobby = {
       id: lobbyId,
       session_id: sessionId,
-      players: [],
+      players,
       created_at: new Date().toISOString(), // Convert to ISO string
       status: LobbyStatus.ACTIVE,
     };
