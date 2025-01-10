@@ -38,45 +38,100 @@ export class RitualWorker {
   // Start monitoring sessions and rounds
   async start() {
     console.log("RitualWorker started...");
+
+    // Fetch the next scheduled session
+    let nextSession = await this.fetchNextSession();
+
     while (true) {
-      try {
-        await this.monitorSessions();
-      } catch (error) {
-        console.error("Error in RitualWorker loop:", error);
-      }
-    }
-  }
-
-  // Monitor sessions and rounds
-  private async monitorSessions() {
-    const activeSessions = await this.fetchActiveSessions();
-
-    if (activeSessions.length === 0) {
-      console.log("No active sessions. Sleeping...");
-      await TimeUtils.sleep(60000); // Sleep for 1 minute if no sessions are active
-      return;
-    }
-
-    for (const session of activeSessions) {
-      const nextEvent = this.getNextEvent(session);
-      if (nextEvent) {
+      if (nextSession) {
         console.log(
-          `Next event for session ${session.id}: ${
-            nextEvent.type
-          } at ${new Date(nextEvent.time)}`
+          `Next session found: ${nextSession.id}, starting monitoring.`
         );
-        await TimeUtils.sleepUntil(nextEvent.time);
-        await this.processEvent(session, nextEvent);
+        await this.monitorSession(nextSession);
+      } else {
+        console.log("No upcoming sessions. Waiting for session creation...");
       }
+
+      // Wait for the next session notification
+      nextSession = await this.waitForNextSession();
     }
   }
 
-  // Fetch active sessions from the database
-  private async fetchActiveSessions(): Promise<Session[]> {
+  private async fetchNextSession(): Promise<Session | null> {
     const result = await this.db.query<Session>(
-      "SELECT * FROM sessions WHERE end_time > NOW() ORDER BY start_time ASC"
+      `SELECT * FROM sessions 
+       WHERE start_time > NOW() 
+       ORDER BY start_time ASC 
+       LIMIT 1`
     );
-    return result.rows;
+    return result.rows[0] || null;
+  }
+
+  private async waitForNextSession(): Promise<Session | null> {
+    return new Promise((resolve) => {
+      this.redis.subscribe("new-session", async (message) => {
+        const { sessionId } = JSON.parse(message);
+        console.log(`New session created: ${sessionId}`);
+        const session = await this.fetchSessionById(sessionId);
+        resolve(session);
+      });
+    });
+  }
+
+  private async monitorSession(session: Session) {
+    console.log(`Monitoring session ${session.id}...`);
+
+    while (true) {
+      const nextEvent = this.getNextEvent(session);
+      if (!nextEvent) {
+        console.log(`Session ${session.id} has no more events.`);
+        break;
+      }
+
+      console.log(`Next event for session ${session.id}: ${nextEvent.type}`);
+      await TimeUtils.sleepUntil(nextEvent.time);
+      await this.processEvent(session, nextEvent);
+    }
+
+    console.log(`Session ${session.id} monitoring completed.`);
+  }
+
+  private async fetchSessionById(sessionId: number): Promise<Session | null> {
+    // Query for the session
+    const sessionQuery = `
+      SELECT * FROM sessions WHERE id = $1;
+    `;
+    const sessionResult = await this.db.query<Session>(sessionQuery, [
+      sessionId,
+    ]);
+
+    if (sessionResult.rows.length === 0) {
+      console.warn(`Session with ID ${sessionId} not found.`);
+      return null;
+    }
+
+    const session = sessionResult.rows[0];
+
+    // Query for the rounds associated with the session
+    const roundsQuery = `
+      SELECT * FROM rounds WHERE session_id = $1 ORDER BY round_number ASC;
+    `;
+    const roundsResult = await this.db.query<Round>(roundsQuery, [sessionId]);
+
+    // Query for the players associated with the session
+    const playersQuery = `
+      SELECT * FROM players WHERE session_id = $1 ORDER BY joined_at ASC;
+    `;
+    const playersResult = await this.db.query<Player>(playersQuery, [
+      sessionId,
+    ]);
+
+    // Combine session, rounds, and players into a single object
+    return {
+      ...session,
+      rounds: roundsResult.rows,
+      players: playersResult.rows,
+    };
   }
 
   // Determine the next event for a session
