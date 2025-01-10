@@ -39,10 +39,15 @@ export default class SessionService {
       const session = sessionResult.rows[0];
 
       const rounds: Round[] = [];
-      const roundDuration =
-        (new Date(session.end_time).getTime() -
-          new Date(session.start_time).getTime()) /
-        session.total_rounds;
+      const staticIntervals = 2 * 60 * 1000; // AI decision (1 min) + Voting (1 min)
+      const waitingTime = 1 * 60 * 1000; // Waiting before the first round
+      const totalDynamicTime =
+        new Date(session.end_time).getTime() -
+        new Date(session.start_time).getTime() -
+        waitingTime -
+        staticIntervals * session.total_rounds;
+
+      const roundDuration = Math.floor(totalDynamicTime / session.total_rounds);
 
       for (let i = 0; i < session.total_rounds; i++) {
         const roundStartTime = new Date(

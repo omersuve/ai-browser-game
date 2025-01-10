@@ -2,7 +2,14 @@ import ApiClient from "../utils/ApiClient";
 import TimeUtils from "../utils/TimeUtils";
 import { RedisService } from "../redis/RedisService";
 import { Pool } from "pg";
-import { Session, Round, Player, AIResponse } from "../types";
+import {
+  Session,
+  Round,
+  Player,
+  AIResponse,
+  Lobby,
+  LobbyStatus,
+} from "../types";
 import LobbyService from "../services/LobbyService";
 import ForumService from "../services/ForumService";
 import PlayerService from "../services/PlayerService";
@@ -87,9 +94,14 @@ export class RitualWorker {
         console.log(`Session ${session.id} has no more events.`);
         break;
       }
-
       console.log(`Next event for session ${session.id}: ${nextEvent.type}`);
       await TimeUtils.sleepUntil(nextEvent.time);
+
+      if (nextEvent.type === "ROUND_START") {
+        console.log("1 minute waiting phase before the round starts.");
+        await TimeUtils.sleep(60 * 1000); // 1-minute waiting phase
+      }
+
       await this.processEvent(session, nextEvent);
     }
 
@@ -171,6 +183,11 @@ export class RitualWorker {
         break;
       case "ROUND_START":
         await this.handleRoundStart(session, event.round);
+        console.log("AI decision phase (1 minute)...");
+        await TimeUtils.sleep(60 * 1000); // AI decision time
+        console.log("Voting phase (1 minute)...");
+        await this.handleVotingPhase(session, event.round); // Implement voting logic
+        await TimeUtils.sleep(60 * 1000); // Voting duration
         break;
       case "SESSION_END":
         await this.handleSessionEnd(session);
@@ -312,6 +329,56 @@ export class RitualWorker {
     });
 
     console.log(`Round ${round.round_number} ended and decisions published.`);
+  }
+
+  // Handle voting phase
+  private async handleVotingPhase(session: Session, lobby: Lobby) {
+    console.log(`Voting phase started for lobby ${lobby.id}.`);
+
+    // Notify players about the voting phase
+    await this.pusher.trigger(`lobby-${lobby.id}`, "voting-start", {
+      lobbyId: lobby.id,
+      message: "Vote to continue the game or share the prize.",
+    });
+
+    // Initialize Redis key for voting
+    const votingKey = `session:${session.id}:lobby:${lobby.id}:votes`;
+    await this.redis.del(votingKey); // Clear any existing votes
+
+    // Wait for voting interval (e.g., 1 minutes)
+    const votingDuration = 1 * 60 * 1000; // 1 minute in milliseconds
+    await TimeUtils.sleep(votingDuration);
+
+    // Fetch votes from Redis
+    const yesVotes = await this.redis.smembers(`${votingKey}:yes`);
+    const noVotes = await this.redis.smembers(`${votingKey}:no`);
+
+    console.log(
+      `Votes for lobby ${lobby.id}: YES=${yesVotes.length}, NO=${noVotes.length}`
+    );
+
+    if (noVotes.length >= yesVotes.length) {
+      // Majority voted to continue
+      console.log(`Lobby ${lobby.id} voted to continue.`);
+      await this.pusher.trigger(`lobby-${lobby.id}`, "voting-result", {
+        lobbyId: lobby.id,
+        result: "continue",
+      });
+    } else {
+      // Majority voted to share the prize
+      console.log(`Lobby ${lobby.id} voted to share the prize.`);
+      await this.pusher.trigger(`lobby-${lobby.id}`, "voting-result", {
+        lobbyId: lobby.id,
+        result: "share",
+      });
+
+      // End the session for this lobby
+      await this.lobbyService.updateLobbyStatus(
+        session.id,
+        lobby.id,
+        LobbyStatus.COMPLETED
+      );
+    }
   }
 
   // Handle session end
