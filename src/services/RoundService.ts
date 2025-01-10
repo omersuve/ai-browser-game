@@ -1,11 +1,14 @@
 import { Pool } from "pg";
 import { Round } from "../types";
+import Pusher from "pusher";
 
 export default class RoundService {
   private db: Pool;
+  private pusher: Pusher;
 
-  constructor(db: Pool) {
+  constructor(db: Pool, pusher: Pusher) {
     this.db = db;
+    this.pusher = pusher;
   }
 
   /**
@@ -40,7 +43,15 @@ export default class RoundService {
         [sessionId, i + 1, roundStartTime, roundEndTime]
       );
 
-      rounds.push(result.rows[0]);
+      const round = result.rows[0];
+      rounds.push(round);
+
+      // Notify via Pusher
+      await this.pusher.trigger(`session-${sessionId}`, "round-created", {
+        roundNumber: round.round_number,
+        startTime: round.start_time,
+        endTime: round.end_time,
+      });
     }
 
     console.log(`Created ${rounds.length} rounds for session ID ${sessionId}.`);
@@ -70,6 +81,16 @@ export default class RoundService {
       aiDecision,
       roundId,
     ]);
+
+    // Notify via Pusher
+    const round = await this.getRoundById(roundId);
+    if (round) {
+      await this.pusher.trigger(`session-${round.session_id}`, "ai-decision", {
+        roundId,
+        aiDecision,
+      });
+    }
+
     console.log(
       `Updated AI decision for round ID ${roundId} to ${aiDecision}.`
     );

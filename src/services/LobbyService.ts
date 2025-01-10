@@ -1,12 +1,15 @@
 import { RedisService } from "../redis/RedisService";
+import Pusher from "pusher";
 import { Player, Lobby, LobbyStatus } from "../types";
 
 export default class LobbyService {
   private redisService: RedisService;
+  private pusher: Pusher;
   private lobbyKeyPrefix = "lobby"; // Key prefix for lobbies
 
-  constructor(redisService: RedisService) {
+  constructor(redisService: RedisService, pusher: Pusher) {
     this.redisService = redisService;
+    this.pusher = pusher;
   }
 
   /**
@@ -20,6 +23,8 @@ export default class LobbyService {
     players: Player[]
   ): Promise<void> {
     const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
+    const sessionLobbiesKey = `${this.lobbyKeyPrefix}:session:${sessionId}:lobbies`;
+
     const exists = await this.redisService.exists(lobbyKey);
 
     if (exists) {
@@ -36,6 +41,10 @@ export default class LobbyService {
     };
 
     await this.redisService.set(lobbyKey, JSON.stringify(lobby));
+
+    // Add the lobby key to the session lobbies index
+    await this.redisService.sadd(sessionLobbiesKey, [lobbyKey]);
+
     console.log(`Created lobby: ${lobbyKey}`);
   }
 
@@ -44,11 +53,13 @@ export default class LobbyService {
    * @param sessionId - The session ID.
    * @param lobbyId - The lobby ID.
    * @param player - The player to add.
+   * @param maxPlayers - The max number of players allowed.
    */
   async addPlayerToLobby(
     sessionId: number,
     lobbyId: number,
-    player: Player
+    player: Player,
+    maxPlayers: number
   ): Promise<void> {
     const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
     const lobbyData = await this.redisService.get(lobbyKey);
@@ -58,6 +69,10 @@ export default class LobbyService {
     }
 
     const lobby: Lobby = JSON.parse(lobbyData);
+    if (lobby.players.length >= maxPlayers) {
+      throw new Error(`Lobby ${lobbyId} is already full`);
+    }
+
     lobby.players.push(player);
 
     await this.redisService.set(lobbyKey, JSON.stringify(lobby));
@@ -109,6 +124,31 @@ export default class LobbyService {
   }
 
   /**
+   * Retrieves all lobbies for a given session.
+   * @param sessionId - The session ID.
+   * @returns An array of lobbies.
+   */
+  async getAllLobbies(sessionId: number): Promise<Lobby[]> {
+    const sessionLobbiesKey = `${this.lobbyKeyPrefix}:session:${sessionId}:lobbies`;
+
+    // Fetch all lobby keys for the session
+    const lobbyKeys = await this.redisService.smembers(sessionLobbiesKey);
+
+    const lobbies: Lobby[] = [];
+    for (const key of lobbyKeys) {
+      const lobbyData = await this.redisService.get(key);
+      if (lobbyData) {
+        lobbies.push(JSON.parse(lobbyData) as Lobby);
+      }
+    }
+
+    console.log(
+      `Retrieved ${lobbies.length} lobbies for session ${sessionId}.`
+    );
+    return lobbies;
+  }
+
+  /**
    * Deletes a lobby.
    * @param sessionId - The session ID.
    * @param lobbyId - The lobby ID.
@@ -120,7 +160,35 @@ export default class LobbyService {
   }
 
   /**
-   * Publishes a real-time lobby update.
+   * Updates a lobby's details.
+   * @param sessionId - The session ID.
+   * @param lobbyId - The lobby ID.
+   * @param updatedData - Partial data to update the lobby.
+   */
+  async updateLobby(
+    sessionId: number,
+    lobbyId: number,
+    updatedData: Partial<Lobby>
+  ): Promise<void> {
+    const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
+    const lobbyData = await this.redisService.get(lobbyKey);
+
+    if (!lobbyData) {
+      throw new Error(`Lobby does not exist for ${lobbyKey}`);
+    }
+
+    // Parse existing lobby and merge with updated data
+    const existingLobby = JSON.parse(lobbyData) as Lobby;
+    const updatedLobby = { ...existingLobby, ...updatedData };
+
+    // Save the updated lobby back to Redis
+    await this.redisService.set(lobbyKey, JSON.stringify(updatedLobby));
+
+    console.log(`Updated lobby ${lobbyId} for session ${sessionId}`);
+  }
+
+  /**
+   * Publishes a real-time lobby update via Pusher.
    * @param sessionId - The session ID.
    * @param lobbyId - The lobby ID.
    * @param message - The update message.
@@ -130,9 +198,9 @@ export default class LobbyService {
     lobbyId: number,
     message: string
   ): Promise<void> {
-    const channel = this.getLobbyChannel(sessionId, lobbyId);
-    await this.redisService.publish(channel, message);
-    console.log(`Published update to channel: ${channel}`);
+    const channel = `lobby-${sessionId}-${lobbyId}`;
+    await this.pusher.trigger(channel, "lobby-update", { message });
+    console.log(`Published lobby update to Pusher channel: ${channel}`);
   }
 
   /**
@@ -169,5 +237,30 @@ export default class LobbyService {
    */
   private getLobbyChannel(sessionId: number, lobbyId: number): string {
     return `lobby:session:${sessionId}:lobby:${lobbyId}`;
+  }
+
+  /**
+   * Updates the status of a lobby.
+   * @param sessionId - The session ID.
+   * @param lobbyId - The lobby ID.
+   * @param status - The new status.
+   */
+  async updateLobbyStatus(
+    sessionId: number,
+    lobbyId: number,
+    status: LobbyStatus
+  ): Promise<void> {
+    const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
+    const lobbyData = await this.redisService.get(lobbyKey);
+
+    if (!lobbyData) {
+      throw new Error(`Lobby does not exist for ${lobbyKey}`);
+    }
+
+    const lobby: Lobby = JSON.parse(lobbyData);
+    lobby.status = status;
+
+    await this.redisService.set(lobbyKey, JSON.stringify(lobby));
+    console.log(`Updated lobby ${lobbyId} status to ${status}`);
   }
 }

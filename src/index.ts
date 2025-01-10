@@ -1,4 +1,5 @@
 import pool from "./db";
+import pusher from "./lib/pusher";
 import { RedisService } from "./redis/RedisService";
 import ApiClient from "./utils/ApiClient";
 import LobbyService from "./services/LobbyService";
@@ -21,14 +22,15 @@ dotenv.config();
     const apiClient = new ApiClient(process.env.AI_API_BASE_URL || "");
 
     // Initialize additional services
-    const lobbyService = new LobbyService(redis);
-    const forumService = new ForumService(redis);
-    const playerService = new PlayerService(pool, redis);
+    const lobbyService = new LobbyService(redis, pusher);
+    const forumService = new ForumService(redis, pusher);
+    const playerService = new PlayerService(pool, redis, pusher);
 
     // Initialize and start RitualWorker
     const ritualWorker = new RitualWorker(
       pool,
       redis,
+      pusher,
       apiClient,
       lobbyService,
       forumService,

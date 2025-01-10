@@ -1,14 +1,17 @@
 import { Pool } from "pg";
 import { RedisService } from "../redis/RedisService";
 import { Player } from "../types";
+import Pusher from "pusher";
 
 export default class PlayerService {
   private db: Pool;
   private redis: RedisService;
+  private pusher: Pusher;
 
-  constructor(db: Pool, redis: RedisService) {
+  constructor(db: Pool, redis: RedisService, pusher: Pusher) {
     this.db = db;
     this.redis = redis;
+    this.pusher = pusher;
   }
 
   /**
@@ -36,6 +39,11 @@ export default class PlayerService {
 
     // Cache the player in Redis
     await this.redis.sadd(key, [walletAddress]);
+
+    // Notify via Pusher
+    await this.pusher.trigger(`session-${sessionId}`, "player-joined", {
+      walletAddress,
+    });
   }
 
   /**
@@ -112,6 +120,12 @@ export default class PlayerService {
       // Store lobby data in Redis
       const lobbyKey = `lobby:session:${sessionId}:lobby:${lobbyId}`;
       await this.redis.set(lobbyKey, JSON.stringify(lobbyPlayers));
+
+      // Notify via Pusher
+      await this.pusher.trigger(`lobby-${lobbyId}`, "lobby-updated", {
+        lobbyId,
+        players: lobbyPlayers,
+      });
     }
 
     return lobbies;

@@ -2,14 +2,16 @@ import ApiClient from "../utils/ApiClient";
 import TimeUtils from "../utils/TimeUtils";
 import { RedisService } from "../redis/RedisService";
 import { Pool } from "pg";
-import { Session, Round, Player } from "../types";
+import { Session, Round, Player, AIResponse } from "../types";
 import LobbyService from "../services/LobbyService";
 import ForumService from "../services/ForumService";
 import PlayerService from "../services/PlayerService";
+import Pusher from "pusher";
 
 export class RitualWorker {
   private db: Pool;
   private redis: RedisService;
+  private pusher: Pusher;
   private apiClient: ApiClient;
   private lobbyService: LobbyService;
   private forumService: ForumService;
@@ -18,6 +20,7 @@ export class RitualWorker {
   constructor(
     db: Pool,
     redis: RedisService,
+    pusher: Pusher,
     apiClient: ApiClient,
     lobbyService: LobbyService,
     forumService: ForumService,
@@ -25,6 +28,7 @@ export class RitualWorker {
   ) {
     this.db = db;
     this.redis = redis;
+    this.pusher = pusher;
     this.apiClient = apiClient;
     this.lobbyService = lobbyService;
     this.forumService = forumService;
@@ -75,11 +79,6 @@ export class RitualWorker {
     return result.rows;
   }
 
-  private async getAIResponse(data: any): Promise<any> {
-    const response = await this.apiClient.post("/ai/response", data);
-    return response.data;
-  }
-
   // Determine the next event for a session
   private getNextEvent(session: Session) {
     const now = Date.now();
@@ -109,11 +108,6 @@ export class RitualWorker {
     );
   }
 
-  private async fetchUpcomingSessions(): Promise<Session[]> {
-    const sessions = await this.apiClient.get<Session[]>("/sessions/upcoming");
-    return sessions.data || [];
-  }
-
   // Process an event (e.g., session start, round start, session end)
   private async processEvent(session: Session, event: any) {
     switch (event.type) {
@@ -125,6 +119,9 @@ export class RitualWorker {
         break;
       case "SESSION_END":
         await this.handleSessionEnd(session);
+        break;
+      case "ROUND_END":
+        await this.handleRoundEnd(session, event.round);
         break;
       default:
         console.warn("Unknown event type:", event.type);
@@ -148,7 +145,20 @@ export class RitualWorker {
         lobbyId,
         players // Pass the array of players directly
       );
+
+      // Notify Pusher for each lobby
+      await this.pusher.trigger(`lobby-${lobbyId}`, "lobby-created", {
+        sessionId: session.id,
+        lobbyId,
+        players,
+      });
     }
+
+    // Notify via Pusher
+    await this.pusher.trigger("sessions", "session-start", {
+      sessionId: session.id,
+      startTime: session.start_time,
+    });
 
     await this.redis.publish(
       "sessions",
@@ -162,12 +172,22 @@ export class RitualWorker {
       `Round ${round.round_number} started for session ${session.id}.`
     );
 
-    // Example: Trigger AI API and publish updates
-    const aiResponse = await this.apiClient.post(`/ai/decision`, {
+    // Fetch AI-generated topic message for the round
+    const aiTopicResponse = await this.apiClient.post(`/ai/topic`, {
       sessionId: session.id,
       roundId: round.id,
     });
-    console.log("AI Response:", aiResponse);
+
+    const topicMessage = aiTopicResponse.data || "Discuss your strategy!";
+    console.log("AI Topic Message:", topicMessage);
+
+    // Notify via Pusher about the round start and topic
+    await this.pusher.trigger("rounds", "round-start", {
+      sessionId: session.id,
+      roundNumber: round.round_number,
+      startTime: round.start_time,
+      topicMessage,
+    });
 
     // Publish round start and AI response
     await this.redis.publish(
@@ -176,25 +196,82 @@ export class RitualWorker {
         type: "ROUND_START",
         sessionId: session.id,
         roundId: round.id,
-        aiResponse,
+        topicMessage,
       })
     );
+  }
+
+  // Handle round end
+  private async handleRoundEnd(session: Session, round: Round) {
+    console.log(`Round ${round.round_number} ended for session ${session.id}.`);
+
+    // Retrieve lobbies for the session
+    const lobbies = await this.lobbyService.getAllLobbies(session.id);
+
+    const roundDecisions: { lobbyId: number; decision: any }[] = [];
+
+    for (const lobby of lobbies) {
+      // Fetch forum messages for the lobby
+      const forumMessages = await this.forumService.getMessages(lobby.id);
+
+      // Send messages and remaining players to the AI for decision
+      const aiResponse = await this.apiClient.post<AIResponse>(`/ai/decision`, {
+        lobby_id: lobby.id,
+        forum_messages: forumMessages,
+        remaining_players: lobby.players.map((player) => player.wallet_address),
+      });
+
+      console.log(`AI Response for lobby ${lobby.id}:`, aiResponse);
+
+      // Process AI decision
+      const eliminatedPlayers = aiResponse.data?.eliminatedPlayers || [];
+      const announcement =
+        aiResponse.data?.announcement || "No elimination this round.";
+
+      // Update Redis for the lobby
+      lobby.players = lobby.players.filter(
+        (player) => !eliminatedPlayers.includes(player.wallet_address)
+      );
+      await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
+
+      // Notify players in the lobby via Pusher
+      await this.pusher.trigger(`lobby-${lobby.id}`, "round-end", {
+        announcement,
+        eliminatedPlayers,
+      });
+
+      // Record the decision for the round
+      roundDecisions.push({ lobbyId: lobby.id, decision: aiResponse.data });
+
+      console.log(`Processed round-end for lobby ${lobby.id}`);
+    }
+
+    // Log the round decisions or save them to the database if needed
+    console.log(`Round ${round.round_number} decisions:`, roundDecisions);
+
+    // Notify via Pusher at the session level
+    await this.pusher.trigger("sessions", "round-end", {
+      sessionId: session.id,
+      roundNumber: round.round_number,
+      decisions: roundDecisions,
+    });
+
+    console.log(`Round ${round.round_number} ended and decisions published.`);
   }
 
   // Handle session end
   private async handleSessionEnd(session: Session) {
     console.log(`Session ${session.id} ended.`);
+
+    // Notify via Pusher
+    await this.pusher.trigger("sessions", "session-end", {
+      sessionId: session.id,
+      endTime: session.end_time,
+    });
+
     await this.redis.publish(
       "sessions",
       JSON.stringify({ type: "SESSION_END", sessionId: session.id })
     );
-  }
-
-  private async fetchPlayers(sessionId: number): Promise<Player[]> {
-    const result = await this.db.query<Player>(
-      `SELECT * FROM players WHERE session_id = $1`,
-      [sessionId]
-    );
-    return result.rows;
   }
 }

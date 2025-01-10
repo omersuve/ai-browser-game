@@ -1,11 +1,14 @@
 import ApiClient from "../utils/ApiClient";
 import { AIResponse, RoundDecision } from "../types";
+import Pusher from "pusher";
 
 export default class AIService {
   private apiClient: ApiClient;
+  private pusher: Pusher;
 
-  constructor(baseUrl: string) {
+  constructor(baseUrl: string, pusher: Pusher) {
     this.apiClient = new ApiClient(baseUrl);
+    this.pusher = pusher;
   }
 
   /**
@@ -29,7 +32,18 @@ export default class AIService {
         throw new Error(`AI API error: ${response.error}`);
       }
 
-      return response.data?.lobbies || [];
+      const decisions = response.data?.lobbies || [];
+
+      // Notify each lobby of their AI decision
+      for (const { lobby_id, decision } of decisions) {
+        await this.pusher.trigger(
+          `lobby-${lobby_id}`,
+          "round-decision",
+          decision
+        );
+      }
+
+      return decisions;
     } catch (error) {
       console.error("Error fetching AI decision:", error);
       throw error;

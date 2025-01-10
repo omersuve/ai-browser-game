@@ -1,11 +1,14 @@
 import { Pool } from "pg";
 import { Session, CreateSessionRequest, Round } from "../types";
+import Pusher from "pusher";
 
 export default class SessionService {
   private db: Pool;
+  private pusher: Pusher;
 
-  constructor(db: Pool) {
+  constructor(db: Pool, pusher: Pusher) {
     this.db = db;
+    this.pusher = pusher;
   }
 
   /**
@@ -64,6 +67,14 @@ export default class SessionService {
       }
 
       await client.query("COMMIT");
+
+      // Notify via Pusher
+      await this.pusher.trigger("sessions", "session-created", {
+        sessionId: session.id,
+        name: session.name,
+        startTime: session.start_time,
+        endTime: session.end_time,
+      });
 
       return { ...session, rounds };
     } catch (error) {
