@@ -183,11 +183,15 @@ export class RitualWorker {
         break;
       case "ROUND_START":
         await this.handleRoundStart(session, event.round);
-        console.log("AI decision phase (1 minute)...");
-        await TimeUtils.sleep(60 * 1000); // AI decision time
-        console.log("Voting phase (1 minute)...");
-        await this.handleVotingPhase(session, event.round); // Implement voting logic
-        await TimeUtils.sleep(60 * 1000); // Voting duration
+        // First round skips AI decision and voting
+        if (event.round.round_number > 1) {
+          console.log("AI decision phase (1 minute)...");
+          await TimeUtils.sleep(60 * 1000); // AI decision time
+
+          console.log("Voting phase (1 minute)...");
+          await this.handleVotingPhase(session, event.round); // Implement voting logic
+          await TimeUtils.sleep(60 * 1000); // Voting duration
+        }
         break;
       case "SESSION_END":
         await this.handleSessionEnd(session);
