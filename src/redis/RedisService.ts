@@ -7,19 +7,18 @@ export class RedisService {
   private subscriberClient: Redis;
 
   constructor() {
-    const redisConfig = {
-      host: process.env.REDIS_HOST || "127.0.0.1",
-      port: parseInt(process.env.REDIS_PORT || "6379", 10),
-      password: process.env.REDIS_PASSWORD || undefined,
-    };
     const redisConfigKV = {
       url: process.env.REDIS_KV_REST_API_URL || "no val",
       token: process.env.REDIS_KV_REST_API_TOKEN || "no val",
     };
 
     this.keyValueClient = new RedisKV(redisConfigKV);
-    this.publisherClient = new Redis(redisConfig);
-    this.subscriberClient = new Redis(redisConfig);
+    this.publisherClient = new Redis(
+      process.env.REDIS_URL || "redis://localhost:6379"
+    );
+    this.subscriberClient = new Redis(
+      process.env.REDIS_URL || "redis://localhost:6379"
+    );
 
     this.handleEvents(this.publisherClient, "Publisher Client");
     this.handleEvents(this.subscriberClient, "Subscriber Client");

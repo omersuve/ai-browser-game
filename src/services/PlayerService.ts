@@ -79,11 +79,15 @@ export default class PlayerService {
 
     const players = result.rows as Player[];
 
-    // Cache players in Redis
-    await this.redis.sadd(
-      key,
-      players.map((player) => player.wallet_address)
-    );
+    // Cache players in Redis if any are found
+    if (players.length > 0) {
+      await this.redis.sadd(
+        key,
+        players.map((player) => player.wallet_address)
+      );
+    } else {
+      console.warn(`No players found for session ${sessionId}.`);
+    }
 
     return players;
   }

@@ -39,8 +39,8 @@ export default class SessionService {
       const session = sessionResult.rows[0];
 
       const rounds: Round[] = [];
-      const staticIntervals = 2 * 60 * 1000; // AI decision (1 min) + Voting (1 min)
-      const waitingTime = 1 * 60 * 1000; // Waiting before the first round
+      const staticIntervals = 2 * 10 * 1000; // AI decision (1 min) + Voting (1 min)
+      const waitingTime = 1 * 10 * 1000; // Waiting before the first round
       const totalDynamicTime =
         new Date(session.end_time).getTime() -
         new Date(session.start_time).getTime() -

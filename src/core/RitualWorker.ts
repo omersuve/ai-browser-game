@@ -23,6 +23,7 @@ export class RitualWorker {
   private lobbyService: LobbyService;
   private forumService: ForumService;
   private playerService: PlayerService;
+  private completedSessions: Set<number>;
 
   constructor(
     db: Pool,
@@ -40,27 +41,43 @@ export class RitualWorker {
     this.lobbyService = lobbyService;
     this.forumService = forumService;
     this.playerService = playerService;
+    this.completedSessions = new Set();
   }
 
-  // Start monitoring sessions and rounds
   async start() {
     console.log("RitualWorker started...");
 
-    // Fetch the next scheduled session
-    let nextSession = await this.fetchNextSession();
+    // Start with the currently active or next scheduled session
+    let nextSession =
+      (await this.getActiveSession()) || (await this.fetchNextSession());
 
     while (true) {
-      if (nextSession) {
-        console.log(
-          `Next session found: ${nextSession.id}, starting monitoring.`
-        );
-        await this.monitorSession(nextSession);
-      } else {
-        console.log("No upcoming sessions. Waiting for session creation...");
-      }
+      console.log("Next session to monitor:", nextSession); // Debugging line
 
-      // Wait for the next session notification
-      nextSession = await this.waitForNextSession();
+      if (nextSession) {
+        if (this.completedSessions.has(nextSession.id)) {
+          console.log(
+            `Session ${nextSession.id} is already completed. Skipping...`
+          );
+        } else {
+          console.log(`Monitoring session: ${nextSession.id}`);
+          console.log("session", nextSession);
+
+          await this.monitorSession(nextSession);
+
+          // Mark the session as completed
+          this.completedSessions.add(nextSession.id);
+        }
+
+        // Fetch the next upcoming session after the current one ends
+        nextSession = await this.fetchNextSession();
+      } else {
+        console.log(
+          "No active or upcoming sessions. Waiting for session creation..."
+        );
+        // Wait for a new session to be added
+        nextSession = await this.waitForNextSession();
+      }
     }
   }
 
@@ -71,23 +88,52 @@ export class RitualWorker {
        ORDER BY start_time ASC 
        LIMIT 1`
     );
+    console.log("fetchNextSession result:", result.rows[0]); // Debugging line
+    return result.rows[0] || null;
+  }
+
+  private async getActiveSession(): Promise<Session | null> {
+    const result = await this.db.query<Session>(
+      `SELECT * FROM sessions 
+       WHERE start_time <= NOW() AND end_time >= NOW()
+       LIMIT 1`
+    );
     return result.rows[0] || null;
   }
 
   private async waitForNextSession(): Promise<Session | null> {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       this.redis.subscribe("new-session", async (message) => {
         const { sessionId } = JSON.parse(message);
-        console.log(`New session created: ${sessionId}`);
-        const session = await this.fetchSessionById(sessionId);
-        resolve(session);
+        console.log(
+          `Redis received new-session event for sessionId: ${sessionId}`
+        ); // Debugging line
+
+        const newSession = await this.fetchSessionById(sessionId);
+
+        if (!newSession) {
+          console.warn(`New session with ID ${sessionId} not found.`);
+          resolve(null);
+          return;
+        }
+
+        if (this.completedSessions.has(newSession.id)) {
+          console.log(
+            `New session (${newSession.id}) is already completed. Skipping...`
+          );
+          resolve(null);
+          return;
+        }
+
+        console.log(
+          `waitForNextSession resolving with session ID: ${newSession.id}`
+        );
+        resolve(newSession);
       });
     });
   }
 
   private async monitorSession(session: Session) {
-    console.log(`Monitoring session ${session.id}...`);
-
     while (true) {
       const nextEvent = this.getNextEvent(session);
       if (!nextEvent) {
@@ -95,11 +141,12 @@ export class RitualWorker {
         break;
       }
       console.log(`Next event for session ${session.id}: ${nextEvent.type}`);
-      await TimeUtils.sleepUntil(nextEvent.time);
+
+      await TimeUtils.sleepUntil(nextEvent.time); // SLEEP UNTIL NEXT EVENT
 
       if (nextEvent.type === "ROUND_START") {
         console.log("1 minute waiting phase before the round starts.");
-        await TimeUtils.sleep(60 * 1000); // 1-minute waiting phase
+        await TimeUtils.sleep(10 * 1000); // 1-minute waiting phase
       }
 
       await this.processEvent(session, nextEvent);
@@ -156,6 +203,7 @@ export class RitualWorker {
       return { type: "SESSION_START", time: startTime };
     } else if (now >= startTime && now < endTime) {
       const nextRound = this.getNextRound(session.rounds || [], now);
+      console.log("nextRound", nextRound);
       if (nextRound) {
         const roundStartTime = new Date(nextRound.start_time).getTime();
         const roundEndTime = new Date(nextRound.end_time).getTime();
@@ -175,8 +223,10 @@ export class RitualWorker {
         }
       }
       return { type: "SESSION_END", time: endTime };
+    } else {
+      console.log(`Session ${session.id} is already over.`);
+      return null; // No more events for this session
     }
-    return null;
   }
 
   // Find the next round that hasn't started yet
@@ -197,11 +247,11 @@ export class RitualWorker {
         // First round skips AI decision and voting
         if (event.round.round_number > 1) {
           console.log("AI decision phase (1 minute)...");
-          await TimeUtils.sleep(60 * 1000); // AI decision time
+          await TimeUtils.sleep(10 * 1000); // AI decision time
 
           console.log("Voting phase (1 minute)...");
           await this.handleVotingPhase(session, event.round); // Implement voting logic
-          await TimeUtils.sleep(60 * 1000); // Voting duration
+          await TimeUtils.sleep(10 * 1000); // Voting duration
         }
         break;
       case "SESSION_END":
@@ -218,6 +268,14 @@ export class RitualWorker {
   // Handle session start
   private async handleSessionStart(session: Session) {
     console.log(`Session ${session.id} started.`);
+
+    // Fetch players for the session
+    const players = await this.playerService.getPlayers(session.id);
+
+    if (players.length === 0) {
+      console.warn(`No players found for session ${session.id}.`);
+      return; // Exit early as there are no players to process
+    }
 
     // Distribute players into lobbies
     const lobbies = await this.playerService.distributePlayersToLobbies(
@@ -361,7 +419,7 @@ export class RitualWorker {
     await this.redis.del(votingKey); // Clear any existing votes
 
     // Wait for voting interval (e.g., 1 minutes)
-    const votingDuration = 1 * 60 * 1000; // 1 minute in milliseconds
+    const votingDuration = 1 * 10 * 1000; // 1 minute in milliseconds
     await TimeUtils.sleep(votingDuration);
 
     // Fetch votes from Redis
