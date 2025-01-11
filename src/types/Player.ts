@@ -4,6 +4,12 @@ export interface Player {
   wallet_address: string; // Foreign key to the User table
   joined_at: string; // ISO date string representing the join time
   eliminated_at?: string; // ISO date string for elimination (optional)
-  status: "active" | "eliminated" | "winner"; // Player status in the session
+  status: PLAYER_STATUS; // Player status in the session
   total_rounds_played: number; // Count of rounds the player has participated in
+}
+
+export enum PLAYER_STATUS {
+  ACTIVE = "active",
+  ELIMINATED = "eliminated",
+  WINNER = "winner",
 }
