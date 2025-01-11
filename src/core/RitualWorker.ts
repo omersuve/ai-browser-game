@@ -157,11 +157,22 @@ export class RitualWorker {
     } else if (now >= startTime && now < endTime) {
       const nextRound = this.getNextRound(session.rounds || [], now);
       if (nextRound) {
-        return {
-          type: "ROUND_START",
-          time: new Date(nextRound.start_time).getTime(),
-          round: nextRound,
-        };
+        const roundStartTime = new Date(nextRound.start_time).getTime();
+        const roundEndTime = new Date(nextRound.end_time).getTime();
+
+        if (now < roundStartTime) {
+          return {
+            type: "ROUND_START",
+            time: roundStartTime,
+            round: nextRound,
+          };
+        } else if (now >= roundStartTime && now < roundEndTime) {
+          return {
+            type: "ROUND_END",
+            time: roundEndTime,
+            round: nextRound,
+          };
+        }
       }
       return { type: "SESSION_END", time: endTime };
     }
