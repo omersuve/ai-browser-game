@@ -33,7 +33,7 @@ export default class PlayerService {
     // Add the player to PostgreSQL
     await this.db.query(
       `INSERT INTO players (session_id, wallet_address, joined_at)
-       VALUES ($1, $2, NOW())`,
+       VALUES ($1, $2, (NOW() AT TIME ZONE 'UTC'))`,
       [sessionId, walletAddress]
     );
 

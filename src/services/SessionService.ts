@@ -23,7 +23,7 @@ export default class SessionService {
 
       const sessionInsertQuery = `
         INSERT INTO sessions (name, entry_fee, total_rounds, max_total_players, start_time, end_time, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, (NOW() AT TIME ZONE 'UTC'))
         RETURNING *;
       `;
 
@@ -57,7 +57,7 @@ export default class SessionService {
 
         const roundInsertQuery = `
           INSERT INTO rounds (session_id, round_number, start_time, end_time, created_at)
-          VALUES ($1, $2, $3, $4, NOW())
+          VALUES ($1, $2, $3, $4, (NOW() AT TIME ZONE 'UTC'))
           RETURNING *;
         `;
 

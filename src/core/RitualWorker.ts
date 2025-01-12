@@ -47,56 +47,79 @@ export class RitualWorker {
   async start() {
     console.log("RitualWorker started...");
 
-    // Start with the currently active or next scheduled session
-    let nextSession =
-      (await this.getActiveSession()) || (await this.fetchNextSession());
-
     while (true) {
-      console.log("Next session to monitor:", nextSession); // Debugging line
+      // Fetch the currently active session or the next scheduled session
 
-      if (nextSession) {
-        if (this.completedSessions.has(nextSession.id)) {
-          console.log(
-            `Session ${nextSession.id} is already completed. Skipping...`
-          );
-        } else {
-          console.log(`Monitoring session: ${nextSession.id}`);
-          console.log("session", nextSession);
+      const nextActiveSession = await this.getActiveSession();
+      console.log("nextActiveSession", nextActiveSession);
 
-          await this.monitorSession(nextSession);
+      const nextUpcomingSession = await this.fetchNextSession();
+      console.log("nextUpcomingSession", nextUpcomingSession);
 
-          // Mark the session as completed
-          this.completedSessions.add(nextSession.id);
-        }
+      console.log("now", new Date().toISOString());
 
-        // Fetch the next upcoming session after the current one ends
-        nextSession = await this.fetchNextSession();
-      } else {
-        console.log(
-          "No active or upcoming sessions. Waiting for session creation..."
-        );
-        // Wait for a new session to be added
-        nextSession = await this.waitForNextSession();
+      let nextSession;
+
+      if (nextActiveSession) {
+        nextSession = nextActiveSession;
+      } else if (nextUpcomingSession) {
+        nextSession = nextUpcomingSession;
       }
-    }
-  }
 
-  private async fetchNextSession(): Promise<Session | null> {
-    const result = await this.db.query<Session>(
-      `SELECT * FROM sessions 
-       WHERE start_time > NOW() 
-       ORDER BY start_time ASC 
-       LIMIT 1`
-    );
-    console.log("fetchNextSession result:", result.rows[0]); // Debugging line
-    return result.rows[0] || null;
+      console.log("nextSession is", nextSession);
+
+      if (!nextSession) {
+        console.log(
+          "No active or upcoming sessions. Waiting for a new session..."
+        );
+        nextSession = await this.waitForNextSession(); // Wait for Redis event
+      }
+
+      // Ensure nextSession is not null
+      if (!nextSession) {
+        console.log("Still no session found. Continuing to wait...");
+        continue;
+      }
+
+      // If the session is already completed, skip and wait for the next one
+      if (this.completedSessions.has(nextSession.id)) {
+        console.log(
+          `Session ${nextSession.id} is already completed. Skipping...`
+        );
+        continue;
+      }
+
+      console.log(`Monitoring session: ${nextSession.id}`);
+
+      // Monitor the session and mark it as completed after monitoring
+      await this.monitorSession(nextSession);
+      this.completedSessions.add(nextSession.id);
+    }
   }
 
   private async getActiveSession(): Promise<Session | null> {
     const result = await this.db.query<Session>(
-      `SELECT * FROM sessions 
-       WHERE start_time <= NOW() AND end_time >= NOW()
-       LIMIT 1`
+      `SELECT id, name, entry_fee, total_rounds, max_total_players, 
+            start_time AT TIME ZONE 'UTC' AS start_time, 
+            end_time AT TIME ZONE 'UTC' AS end_time, 
+            created_at AT TIME ZONE 'UTC' AS created_at 
+     FROM sessions 
+     WHERE start_time <= NOW() AT TIME ZONE 'UTC' AND end_time >= NOW() AT TIME ZONE 'UTC' 
+     LIMIT 1`
+    );
+    return result.rows[0] || null;
+  }
+
+  private async fetchNextSession(): Promise<Session | null> {
+    const result = await this.db.query<Session>(
+      `SELECT id, name, entry_fee, total_rounds, max_total_players, 
+            start_time AT TIME ZONE 'UTC' AS start_time, 
+            end_time AT TIME ZONE 'UTC' AS end_time, 
+            created_at AT TIME ZONE 'UTC' AS created_at 
+     FROM sessions 
+     WHERE start_time > NOW() AT TIME ZONE 'UTC' 
+     ORDER BY start_time ASC 
+     LIMIT 1`
     );
     return result.rows[0] || null;
   }
@@ -105,11 +128,9 @@ export class RitualWorker {
     return new Promise(async (resolve) => {
       this.redis.subscribe("new-session", async (message) => {
         const { sessionId } = JSON.parse(message);
-        console.log(
-          `Redis received new-session event for sessionId: ${sessionId}`
-        ); // Debugging line
-
         const newSession = await this.fetchSessionById(sessionId);
+
+        console.log("newSession", newSession);
 
         if (!newSession) {
           console.warn(`New session with ID ${sessionId} not found.`);
@@ -125,31 +146,36 @@ export class RitualWorker {
           return;
         }
 
-        console.log(
-          `waitForNextSession resolving with session ID: ${newSession.id}`
-        );
         resolve(newSession);
       });
     });
   }
 
   private async monitorSession(session: Session) {
+    console.log("session", session);
+
     while (true) {
       const nextEvent = this.getNextEvent(session);
       if (!nextEvent) {
-        console.log(`Session ${session.id} has no more events.`);
         break;
       }
       console.log(`Next event for session ${session.id}: ${nextEvent.type}`);
 
       await TimeUtils.sleepUntil(nextEvent.time); // SLEEP UNTIL NEXT EVENT
 
-      if (nextEvent.type === "ROUND_START") {
-        console.log("1 minute waiting phase before the round starts.");
-        await TimeUtils.sleep(10 * 1000); // 1-minute waiting phase
-      }
-
       await this.processEvent(session, nextEvent);
+
+      // Mark ROUND_START and ROUND_END separately
+      if (nextEvent.type === "ROUND_START") {
+        if (nextEvent.round) {
+        }
+      } else if (nextEvent.type === "ROUND_END") {
+        if (nextEvent.round) {
+          console.log(`Round ${nextEvent.round.round_number} ended.`);
+        }
+      } else if (nextEvent.type === "SESSION_END") {
+        break; // No need to process further after session ends
+      }
     }
 
     console.log(`Session ${session.id} monitoring completed.`);
@@ -202,11 +228,14 @@ export class RitualWorker {
     if (now < startTime) {
       return { type: "SESSION_START", time: startTime };
     } else if (now >= startTime && now < endTime) {
-      const nextRound = this.getNextRound(session.rounds || [], now);
+      const nextRound = this.getNextEventRound(session.rounds || [], now);
       console.log("nextRound", nextRound);
       if (nextRound) {
         const roundStartTime = new Date(nextRound.start_time).getTime();
         const roundEndTime = new Date(nextRound.end_time).getTime();
+        console.log("now", now.toLocaleString());
+        console.log("roundStartTime", roundStartTime.toLocaleString());
+        console.log("roundEndTime", roundEndTime.toLocaleString());
 
         if (now < roundStartTime) {
           return {
@@ -230,9 +259,14 @@ export class RitualWorker {
   }
 
   // Find the next round that hasn't started yet
-  private getNextRound(rounds: Round[], now: number): Round | null {
+  private getNextEventRound(rounds: Round[], now: number): Round | null {
     return (
-      rounds.find((round) => new Date(round.start_time).getTime() > now) || null
+      rounds.find(
+        (round) =>
+          (new Date(round.start_time).getTime() <= now &&
+            new Date(round.end_time).getTime() > now) ||
+          new Date(round.start_time).getTime() > now
+      ) || null
     );
   }
 
@@ -247,11 +281,9 @@ export class RitualWorker {
         // First round skips AI decision and voting
         if (event.round.round_number > 1) {
           console.log("AI decision phase (1 minute)...");
-          await TimeUtils.sleep(10 * 1000); // AI decision time
 
           console.log("Voting phase (1 minute)...");
           await this.handleVotingPhase(session, event.round); // Implement voting logic
-          await TimeUtils.sleep(10 * 1000); // Voting duration
         }
         break;
       case "SESSION_END":
@@ -417,10 +449,6 @@ export class RitualWorker {
     // Initialize Redis key for voting
     const votingKey = `session:${session.id}:lobby:${lobby.id}:votes`;
     await this.redis.del(votingKey); // Clear any existing votes
-
-    // Wait for voting interval (e.g., 1 minutes)
-    const votingDuration = 1 * 10 * 1000; // 1 minute in milliseconds
-    await TimeUtils.sleep(votingDuration);
 
     // Fetch votes from Redis
     const yesVotes = await this.redis.smembers(`${votingKey}:yes`);
