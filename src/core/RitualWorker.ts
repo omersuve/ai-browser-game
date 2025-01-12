@@ -23,7 +23,6 @@ export class RitualWorker {
   private lobbyService: LobbyService;
   private forumService: ForumService;
   private playerService: PlayerService;
-  private completedSessions: Set<number>;
 
   constructor(
     db: Pool,
@@ -41,7 +40,6 @@ export class RitualWorker {
     this.lobbyService = lobbyService;
     this.forumService = forumService;
     this.playerService = playerService;
-    this.completedSessions = new Set();
   }
 
   async start() {
@@ -81,19 +79,10 @@ export class RitualWorker {
         continue;
       }
 
-      // If the session is already completed, skip and wait for the next one
-      if (this.completedSessions.has(nextSession.id)) {
-        console.log(
-          `Session ${nextSession.id} is already completed. Skipping...`
-        );
-        continue;
-      }
-
       console.log(`Monitoring session: ${nextSession.id}`);
 
-      // Monitor the session and mark it as completed after monitoring
+      // Monitor the session
       await this.monitorSession(nextSession);
-      this.completedSessions.add(nextSession.id);
     }
   }
 
@@ -134,14 +123,6 @@ export class RitualWorker {
 
         if (!newSession) {
           console.warn(`New session with ID ${sessionId} not found.`);
-          resolve(null);
-          return;
-        }
-
-        if (this.completedSessions.has(newSession.id)) {
-          console.log(
-            `New session (${newSession.id}) is already completed. Skipping...`
-          );
           resolve(null);
           return;
         }
@@ -224,6 +205,10 @@ export class RitualWorker {
     const now = Date.now();
     const startTime = new Date(session.start_time).getTime();
     const endTime = new Date(session.end_time).getTime();
+
+    console.log("now (UTC):", new Date(now).toISOString());
+    console.log("start_time (UTC):", new Date(startTime).toISOString());
+    console.log("end_time (UTC):", new Date(endTime).toISOString());
 
     if (now < startTime) {
       return { type: "SESSION_START", time: startTime };
