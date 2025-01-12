@@ -10,8 +10,14 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
+# Set environment variable for timezone
+ENV TZ=UTC
+
 # Copy the application code
 COPY . .
+
+# Build the application
+RUN npm run build
 
 # Command to run the application
 CMD ["npm", "run", "start"]
