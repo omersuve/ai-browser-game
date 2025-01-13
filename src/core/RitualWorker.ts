@@ -127,6 +127,13 @@ export class RitualWorker {
           return;
         }
 
+        await this.pusher.trigger("sessions", "new-session", {
+          sessionId: newSession.id,
+          startTime: newSession.start_time,
+          endTime: newSession.end_time,
+          name: newSession.name,
+        });
+
         resolve(newSession);
       });
     });
