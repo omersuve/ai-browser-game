@@ -153,15 +153,7 @@ export class RitualWorker {
 
       await this.processEvent(session, nextEvent);
 
-      // Mark ROUND_START and ROUND_END separately
-      if (nextEvent.type === "ROUND_START") {
-        if (nextEvent.round) {
-        }
-      } else if (nextEvent.type === "ROUND_END") {
-        if (nextEvent.round) {
-          console.log(`Round ${nextEvent.round.round_number} ended.`);
-        }
-      } else if (nextEvent.type === "SESSION_END") {
+      if (nextEvent.type === "SESSION_END") {
         break; // No need to process further after session ends
       }
     }
@@ -488,5 +480,28 @@ export class RitualWorker {
       "sessions",
       JSON.stringify({ type: "SESSION_END", sessionId: session.id })
     );
+
+    // Redis cleanup: remove all keys related to the session and its lobbies
+    try {
+      console.log(`Cleaning up Redis data for session ${session.id}...`);
+
+      // Remove session-specific data
+      await this.redis.del(`session:${session.id}`);
+
+      // Remove all lobby-specific data
+      const lobbies = await this.lobbyService.getAllLobbies(session.id);
+      for (const lobby of lobbies) {
+        await this.redis.del(`lobby:${lobby.id}:players`);
+        await this.redis.del(`lobby:${lobby.id}:votes`);
+        await this.redis.del(`lobby:${lobby.id}`);
+      }
+
+      console.log(`Redis data for session ${session.id} cleaned up.`);
+    } catch (err) {
+      console.error(
+        `Failed to clean up Redis data for session ${session.id}:`,
+        err
+      );
+    }
   }
 }
