@@ -34,7 +34,7 @@ export class RedisService {
     return this.keyValueClient.set(key, value);
   }
 
-  async get(key: string): Promise<string | null> {
+  async get(key: string): Promise<any | null> {
     return this.keyValueClient.get(key);
   }
 

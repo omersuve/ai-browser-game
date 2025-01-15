@@ -149,10 +149,12 @@ export default class LobbyService {
 
     const lobbies: Lobby[] = [];
     for (const key of lobbyKeys) {
-      const lobbyData = await this.redisService.get(key);
+      const lobbyData: Lobby = await this.redisService.get(key);
+      console.log("lobbyData:", lobbyData);
+      console.log("type of lobbyData:", typeof lobbyData);
       if (lobbyData) {
         try {
-          lobbies.push(JSON.parse(lobbyData) as Lobby);
+          lobbies.push(lobbyData);
         } catch (error) {
           console.error(`Invalid lobby data for key ${key}:`, error);
         }
