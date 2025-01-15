@@ -307,20 +307,29 @@ export class RitualWorker {
     }
 
     // Create lobbies in Redis
-    for (const { lobbyId, players } of lobbies) {
-      await this.lobbyService.createLobby(
-        session.id,
-        lobbyId,
-        players // Pass the array of players directly
-      );
+    await Promise.all(
+      lobbies.map(({ lobbyId, players }) =>
+        this.lobbyService.createLobby(session.id, lobbyId, players)
+      )
+    );
 
-      // Notify Pusher for each lobby
-      await this.pusher.trigger(`lobby-${lobbyId}`, "lobby-created", {
-        sessionId: session.id,
-        lobbyId,
-        players,
-      });
-    }
+    console.log("All lobbies created in Redis.");
+
+    // Notify Pusher for each lobby
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Notify Pusher for each lobby
+    await Promise.all(
+      lobbies.map(({ lobbyId, players }) =>
+        this.pusher.trigger(`lobby-${lobbyId}`, "lobby-created", {
+          sessionId: session.id,
+          lobbyId,
+          players,
+        })
+      )
+    );
+
+    console.log("All Pusher events for lobbies triggered.");
 
     // Notify via Pusher
     await this.pusher.trigger("sessions", "session-start", {
