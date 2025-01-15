@@ -299,6 +299,13 @@ export class RitualWorker {
       session.max_total_players
     );
 
+    if (lobbies.length === 0) {
+      console.warn(
+        `No lobbies created for session ${session.id} due to no players.`
+      );
+      return; // Exit early as there are no lobbies to process
+    }
+
     // Create lobbies in Redis
     for (const { lobbyId, players } of lobbies) {
       await this.lobbyService.createLobby(
@@ -368,6 +375,8 @@ export class RitualWorker {
 
     // Retrieve lobbies for the session
     const lobbies = await this.lobbyService.getAllLobbies(session.id);
+
+    console.log("lobbies:", lobbies);
 
     const roundDecisions: { lobbyId: number; decision: any }[] = [];
 

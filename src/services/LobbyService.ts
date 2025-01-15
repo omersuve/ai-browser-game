@@ -26,7 +26,6 @@ export default class LobbyService {
     const sessionLobbiesKey = `${this.lobbyKeyPrefix}:session:${sessionId}:lobbies`;
 
     const exists = await this.redisService.exists(lobbyKey);
-
     if (exists) {
       console.warn(`Lobby already exists for ${lobbyKey}`);
       return;
@@ -40,10 +39,17 @@ export default class LobbyService {
       status: LobbyStatus.ACTIVE,
     };
 
-    await this.redisService.set(lobbyKey, JSON.stringify(lobby));
-
-    // Add the lobby key to the session lobbies index
-    await this.redisService.sadd(sessionLobbiesKey, [lobbyKey]);
+    // Store the lobby data in Redis
+    try {
+      await this.redisService.set(lobbyKey, JSON.stringify(lobby));
+      await this.redisService.sadd(sessionLobbiesKey, [lobbyKey]);
+      console.log(`Created lobby: ${lobbyKey}`);
+    } catch (error: any) {
+      console.error(`Failed to store lobby for key: ${lobbyKey}`, error);
+      // Cleanup on failure
+      await this.redisService.del(lobbyKey);
+      throw new Error(`Failed to create lobby: ${error.message}`);
+    }
 
     console.log(`Created lobby: ${lobbyKey}`);
   }
@@ -134,11 +140,24 @@ export default class LobbyService {
     // Fetch all lobby keys for the session
     const lobbyKeys = await this.redisService.smembers(sessionLobbiesKey);
 
+    console.log("lobbyKeys:", lobbyKeys);
+
+    if (lobbyKeys.length === 0) {
+      console.warn(`No lobbies found for session ${sessionId}.`);
+      return []; // Return an empty array if no lobbies exist
+    }
+
     const lobbies: Lobby[] = [];
     for (const key of lobbyKeys) {
       const lobbyData = await this.redisService.get(key);
       if (lobbyData) {
-        lobbies.push(JSON.parse(lobbyData) as Lobby);
+        try {
+          lobbies.push(JSON.parse(lobbyData) as Lobby);
+        } catch (error) {
+          console.error(`Invalid lobby data for key ${key}:`, error);
+        }
+      } else {
+        console.warn(`No data found for lobby key ${key}`);
       }
     }
 

@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import { RedisService } from "../redis/RedisService";
-import { Player } from "../types";
+import { Lobby, LobbyStatus, Player } from "../types";
 import Pusher from "pusher";
 
 export default class PlayerService {
@@ -105,6 +105,11 @@ export default class PlayerService {
     // Fetch all players
     const players = await this.getPlayers(sessionId);
 
+    if (players.length === 0) {
+      console.warn(`No players to distribute for session ${sessionId}.`);
+      return [];
+    }
+
     // Shuffle the players
     const shuffledPlayers = players.sort(() => Math.random() - 0.5);
 
@@ -113,23 +118,38 @@ export default class PlayerService {
     let lobbyId = 1;
 
     for (let i = 0; i < shuffledPlayers.length; i += maxPlayersPerLobby) {
+      const lobbyKey = `lobby:session:${sessionId}:lobby:${lobbyId}`;
+
       const lobbyPlayers = shuffledPlayers.slice(i, i + maxPlayersPerLobby);
 
-      // Create a lobby entry
-      lobbies.push({
-        lobbyId: lobbyId++,
+      // Create a Lobby object
+      const lobby: Lobby = {
+        id: lobbyId,
+        session_id: sessionId,
         players: lobbyPlayers,
-      });
+        created_at: new Date().toISOString(),
+        status: LobbyStatus.ACTIVE,
+      };
 
       // Store lobby data in Redis
-      const lobbyKey = `lobby:session:${sessionId}:lobby:${lobbyId}`;
-      await this.redis.set(lobbyKey, JSON.stringify(lobbyPlayers));
+      await this.redis.set(lobbyKey, JSON.stringify(lobby));
+      console.log(`Stored lobby in Redis: ${lobbyKey}`);
+
+      // Create a lobby entry
+      lobbies.push({ lobbyId, players: lobbyPlayers });
+
+      // Add the lobby key to the session lobbies set
+      const sessionLobbiesKey = `lobby:session:${sessionId}:lobbies`;
+      await this.redis.sadd(sessionLobbiesKey, [lobbyKey]);
 
       // Notify via Pusher
-      await this.pusher.trigger(`lobby-${lobbyId}`, "lobby-updated", {
+      await this.pusher.trigger(`lobby-${lobbyId}`, "lobby-created", {
+        sessionId,
         lobbyId,
         players: lobbyPlayers,
       });
+
+      lobbyId++;
     }
 
     return lobbies;
