@@ -23,6 +23,7 @@ export class RitualWorker {
   private lobbyService: LobbyService;
   private forumService: ForumService;
   private playerService: PlayerService;
+  private agentId: string;
 
   constructor(
     db: Pool,
@@ -40,6 +41,7 @@ export class RitualWorker {
     this.lobbyService = lobbyService;
     this.forumService = forumService;
     this.playerService = playerService;
+    this.agentId = "36a03003-5d9b-0f41-ac69-85e98679b3e8";
   }
 
   async start() {
@@ -394,11 +396,16 @@ export class RitualWorker {
       const forumMessages = await this.forumService.getMessages(lobby.id);
 
       // Send messages and remaining players to the AI for decision
-      const aiResponse = await this.apiClient.post<AIResponse>(`/ai/decision`, {
-        lobby_id: lobby.id,
-        forum_messages: forumMessages,
-        remaining_players: lobby.players.map((player) => player.wallet_address),
-      });
+      const aiResponse = await this.apiClient.post<AIResponse>(
+        `/${this.agentId}/decideEliminations/${lobby.id}`,
+        {
+          lobby_id: lobby.id,
+          forum_messages: forumMessages,
+          remaining_players: lobby.players.map(
+            (player) => player.wallet_address
+          ),
+        }
+      );
 
       console.log(`AI Response for lobby ${lobby.id}:`, aiResponse);
 
