@@ -3,7 +3,6 @@ import { Redis as RedisKV } from "@upstash/redis";
 
 export class RedisService {
   private keyValueClient: RedisKV;
-  private publisherClient: Redis;
   private subscriberClient: Redis;
 
   constructor() {
@@ -13,14 +12,10 @@ export class RedisService {
     };
 
     this.keyValueClient = new RedisKV(redisConfigKV);
-    this.publisherClient = new Redis(
-      process.env.REDIS_URL || "redis://localhost:6379"
-    );
     this.subscriberClient = new Redis(
       process.env.REDIS_URL || "redis://localhost:6379"
     );
 
-    this.handleEvents(this.publisherClient, "Publisher Client");
     this.handleEvents(this.subscriberClient, "Subscriber Client");
   }
 
@@ -69,11 +64,6 @@ export class RedisService {
     return this.keyValueClient.sismember(key, member);
   }
 
-  // Publish to a channel
-  async publish(channel: string, message: string) {
-    return this.publisherClient.publish(channel, message);
-  }
-
   // Add this method to the RedisService class
   async exists(key: string): Promise<boolean> {
     const result = await this.keyValueClient.exists(key);
@@ -94,10 +84,7 @@ export class RedisService {
 
   // Cleanup
   async disconnect() {
-    await Promise.all([
-      this.publisherClient.quit(),
-      this.subscriberClient.quit(),
-    ]);
+    await Promise.all([this.subscriberClient.quit()]);
     console.log("All Redis clients disconnected.");
   }
 }

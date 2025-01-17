@@ -204,86 +204,311 @@ export class RitualWorker {
   // Determine the next event for a session
   private getNextEvent(session: Session) {
     const now = Date.now();
-    const startTime = new Date(session.start_time).getTime();
-    const endTime = new Date(session.end_time).getTime();
 
-    console.log("now (UTC):", new Date(now).toISOString());
-    console.log("start_time (UTC):", new Date(startTime).toISOString());
-    console.log("end_time (UTC):", new Date(endTime).toISOString());
-
-    if (now < startTime) {
-      return { type: "SESSION_START", time: startTime };
-    } else if (now >= startTime && now < endTime) {
-      const nextRound = this.getNextEventRound(session.rounds || [], now);
-      console.log("nextRound", nextRound);
-      if (nextRound) {
-        const roundStartTime = new Date(nextRound.start_time).getTime();
-        const roundEndTime = new Date(nextRound.end_time).getTime();
-        console.log("now", now.toLocaleString());
-        console.log("roundStartTime", roundStartTime.toLocaleString());
-        console.log("roundEndTime", roundEndTime.toLocaleString());
-
-        if (now < roundStartTime) {
-          return {
-            type: "ROUND_START",
-            time: roundStartTime,
-            round: nextRound,
-          };
-        } else if (now >= roundStartTime && now < roundEndTime) {
-          return {
-            type: "ROUND_END",
-            time: roundEndTime,
-            round: nextRound,
-          };
-        }
-      }
-      return { type: "SESSION_END", time: endTime };
-    } else {
+    // Check if the session has already ended
+    if (now >= new Date(session.end_time).getTime()) {
       console.log(`Session ${session.id} is already over.`);
-      return null; // No more events for this session
+      return null;
     }
+
+    const events: { type: string; time: number; round?: Round }[] = [];
+    const rounds = session.rounds || [];
+
+    // Add session start and end events
+    if (now < new Date(session.start_time).getTime()) {
+      events.push({
+        type: "SESSION_START",
+        time: new Date(session.start_time).getTime(),
+      });
+    }
+
+    events.push({
+      type: "SESSION_END",
+      time: new Date(session.end_time).getTime(),
+    });
+
+    // Add all round-related events
+    for (const round of rounds) {
+      events.push(
+        {
+          type: "AI_MESSAGE_START",
+          time: new Date(round.ai_message_start).getTime(),
+          round,
+        },
+        {
+          type: "AI_MESSAGE_END",
+          time: new Date(round.ai_message_end).getTime(),
+          round,
+        },
+        {
+          type: "ROUND_START",
+          time: new Date(round.start_time).getTime(),
+          round,
+        },
+        { type: "ROUND_END", time: new Date(round.end_time).getTime(), round },
+        {
+          type: "ELIMINATION_START",
+          time: new Date(round.elimination_start).getTime(),
+          round,
+        },
+        {
+          type: "ELIMINATION_END",
+          time: new Date(round.elimination_end).getTime(),
+          round,
+        },
+        {
+          type: "VOTING_START",
+          time: new Date(round.voting_start_time).getTime(),
+          round,
+        },
+        {
+          type: "VOTING_END",
+          time: new Date(round.voting_end_time).getTime(),
+          round,
+        }
+      );
+    }
+
+    // Find the next event based on the current time
+    const nextEvent = events
+      .filter((event) => event.time > now) // Only future events
+      .sort((a, b) => a.time - b.time)[0]; // Find the closest event
+
+    return nextEvent || null;
   }
 
-  // Find the next round that hasn't started yet
-  private getNextEventRound(rounds: Round[], now: number): Round | null {
-    return (
-      rounds.find(
-        (round) =>
-          (new Date(round.start_time).getTime() <= now &&
-            new Date(round.end_time).getTime() > now) ||
-          new Date(round.start_time).getTime() > now
-      ) || null
-    );
-  }
-
-  // Process an event (e.g., session start, round start, session end)
   private async processEvent(session: Session, event: any) {
     switch (event.type) {
       case "SESSION_START":
         await this.handleSessionStart(session);
         break;
-      case "ROUND_START":
-        await this.handleRoundStart(session, event.round);
-        // First round skips AI decision and voting
-        if (event.round.round_number > 1) {
-          console.log("AI decision phase (1 minute)...");
 
-          console.log("Voting phase (1 minute)...");
-          await this.handleVotingPhase(session, event.round); // Implement voting logic
-        }
+      case "AI_MESSAGE_START":
+        await this.handleAiMessageStart(session, event.round);
         break;
+
+      case "AI_MESSAGE_END":
+        await this.handleAiMessageEnd(session, event.round);
+
+        await this.processEvent(session, {
+          type: "ROUND_START",
+          round: event.round,
+        });
+        break;
+
+      case "ROUND_START":
+        console.log("Round started", event.round.round_number);
+        await this.handleRoundStart(session, event.round);
+        break;
+
+      case "ROUND_END":
+        await this.handleRoundEnd(session, event.round);
+        console.log("Starting elimination phase...");
+        await this.processEvent(session, {
+          type: "ELIMINATION_START",
+          round: event.round,
+        });
+        break;
+
+      case "ELIMINATION_START":
+        await this.handleEliminationStart(session, event.round);
+        break;
+
+      case "ELIMINATION_END":
+        await this.handleEliminationEnd(session, event.round);
+        // Fetch remaining players for each active lobby
+        const activeLobbies = await this.lobbyService.getActiveLobbies(
+          session.id
+        );
+
+        for (const lobby of activeLobbies) {
+          const remainingPlayers =
+            await this.lobbyService.getRemainingPlayersByLobby(
+              session.id,
+              lobby.id
+            );
+
+          if (remainingPlayers.length === 1) {
+            console.log(
+              `Only one player left in lobby ${lobby.id}. Ending game for this lobby.`
+            );
+
+            // Mark the lobby as completed
+            await this.lobbyService.updateLobbyStatus(
+              session.id,
+              lobby.id,
+              LobbyStatus.COMPLETED
+            );
+
+            // Notify via Pusher
+            await this.pusher.trigger(`lobby-${lobby.id}`, "game-end", {
+              lobbyId: lobby.id,
+              message: "Only one player left. The game has ended.",
+            });
+          }
+        }
+
+        break;
+
+      case "VOTING_START":
+        await this.handleVotingStart(session, event.round);
+        break;
+
+      case "VOTING_END":
+        await this.handleVotingEnd(session, event.round);
+        break;
+
       case "SESSION_END":
         await this.handleSessionEnd(session);
         break;
-      case "ROUND_END":
-        await this.handleRoundEnd(session, event.round);
-        break;
+
       default:
         console.warn("Unknown event type:", event.type);
     }
   }
 
-  // Handle session start
+  private async handleEliminationStart(session: Session, round: Round) {
+    console.log(
+      `Elimination phase started for round ${round.round_number} in session ${session.id}.`
+    );
+
+    // Retrieve lobbies for the session
+    const lobbies = await this.lobbyService.getActiveLobbies(session.id);
+    console.log("lobbies:", lobbies);
+
+    const eliminationResults: {
+      lobbyId: number;
+      eliminatedPlayers: string[];
+      announcement: string;
+    }[] = [];
+
+    for (const lobby of lobbies) {
+      // Fetch forum messages for the lobby
+      const forumMessages = await this.forumService.getMessages(lobby.id);
+
+      // Send messages and remaining players to the AI for decision
+      const aiResponse = await this.apiClient.get<AIResponse>(
+        `/${this.agentId}/decideEliminations/${lobby.id}`
+      );
+
+      console.log(`AI Response for lobby ${lobby.id}:`, aiResponse);
+
+      // Extract AI decisions
+      const eliminatedPlayers = aiResponse.data?.eliminatedPlayers || [];
+      const announcement =
+        aiResponse.data?.announcement || "No elimination this round.";
+
+      // Update lobby players
+      lobby.players = lobby.players.filter(
+        (player) => !eliminatedPlayers.includes(player.wallet_address)
+      );
+      await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
+
+      // Store in Redis
+      const redisKey = `elimination:lobby:${lobby.id}`;
+      await this.redis.set(redisKey, JSON.stringify({ announcement }));
+
+      // Notify players via Pusher
+      await this.pusher.trigger(`lobby-${lobby.id}`, "elimination-start", {
+        announcement,
+        eliminatedPlayers,
+      });
+
+      eliminationResults.push({
+        lobbyId: lobby.id,
+        eliminatedPlayers,
+        announcement,
+      });
+
+      console.log(`Elimination processed for lobby ${lobby.id}.`);
+    }
+
+    console.log(
+      `Elimination results for round ${round.round_number}:`,
+      eliminationResults
+    );
+
+    return eliminationResults; // Return results for further processing if needed
+  }
+
+  private async handleEliminationEnd(
+    session: Session,
+    round: Round
+  ): Promise<void> {
+    console.log(
+      `Elimination phase ended for round ${round.round_number} in session ${session.id}.`
+    );
+
+    // Fetch all active lobbies
+    const activeLobbies = await this.lobbyService.getActiveLobbies(session.id);
+
+    if (activeLobbies.length === 0) {
+      console.log(
+        `No active lobbies for elimination in session ${session.id}.`
+      );
+      return;
+    }
+
+    for (const lobby of activeLobbies) {
+      // Notify players about the end of the elimination phase
+      await this.pusher.trigger(`lobby-${lobby.id}`, "elimination-end", {
+        lobbyId: lobby.id,
+        message: "Elimination phase has ended. Prepare for the next phase.",
+      });
+
+      console.log(`Lobby ${lobby.id}: Elimination phase concluded.`);
+    }
+
+    console.log(`Elimination phase for round ${round.round_number} completed.`);
+  }
+
+  private async handleAiMessageEnd(
+    session: Session,
+    round: Round
+  ): Promise<void> {
+    console.log(
+      `AI message phase ended for round ${round.round_number} in session ${session.id}.`
+    );
+
+    // Notify players in the session about the AI message conclusion
+    await this.pusher.trigger("rounds", "ai-message-end", {
+      sessionId: session.id,
+      roundNumber: round.round_number,
+      message: "AI message phase has concluded. Prepare for the next phase.",
+    });
+
+    console.log(
+      `AI message phase concluded for round ${round.round_number} in session ${session.id}.`
+    );
+  }
+
+  private async handleAiMessageStart(session: Session, round: Round) {
+    console.log(
+      `AI message phase started for round ${round.round_number} in session ${session.id}.`
+    );
+
+    // Fetch AI-generated topic message
+    const aiTopicResponse = await this.apiClient.get(
+      `/${this.agentId}/roundAnnouncement/${round.round_number}` // TODO: ADD LOBBY
+    );
+
+    const topicMessage = aiTopicResponse.data || "Discuss your strategy!";
+    console.log("AI Topic Message:", topicMessage);
+
+    // Store in Redis
+    const redisKey = `topic`;
+    await this.redis.set(redisKey, JSON.stringify({ topicMessage }));
+
+    // Notify via Pusher about the AI topic message
+    await this.pusher.trigger("rounds", "ai-message-start", {
+      sessionId: session.id,
+      roundNumber: round.round_number,
+      topicMessage,
+    });
+
+    console.log(`AI message for round ${round.round_number} published.`);
+  }
+
   private async handleSessionStart(session: Session) {
     console.log(`Session ${session.id} started.`);
 
@@ -318,180 +543,139 @@ export class RitualWorker {
     console.log("All lobbies created in Redis.");
 
     // Notify Pusher for each lobby
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // Notify Pusher for each lobby
-    await Promise.all(
-      lobbies.map(({ lobbyId, players }) =>
-        this.pusher.trigger(`lobby-${lobbyId}`, "lobby-created", {
-          sessionId: session.id,
-          lobbyId,
-          players,
-        })
-      )
-    );
-
-    console.log("All Pusher events for lobbies triggered.");
+    // // Notify Pusher for each lobby
+    // await Promise.all(
+    //   lobbies.map(({ lobbyId, players }) =>
+    //     this.pusher.trigger(`lobby-${lobbyId}`, "lobby-created", {
+    //       sessionId: session.id,
+    //       lobbyId,
+    //       players,
+    //     })
+    //   )
+    // );
+    // console.log("All Pusher events for lobbies triggered.");
 
     // Notify via Pusher
     await this.pusher.trigger("sessions", "session-start", {
       sessionId: session.id,
       startTime: session.start_time,
     });
-
-    await this.redis.publish(
-      "sessions",
-      JSON.stringify({ type: "SESSION_START", sessionId: session.id })
-    );
   }
 
-  // Handle round start
   private async handleRoundStart(session: Session, round: Round) {
     console.log(
       `Round ${round.round_number} started for session ${session.id}.`
     );
 
-    // Fetch AI-generated topic message for the round
-    const aiTopicResponse = await this.apiClient.post(`/ai/topic`, {
-      sessionId: session.id,
-      roundId: round.id,
-    });
-
-    const topicMessage = aiTopicResponse.data || "Discuss your strategy!";
-    console.log("AI Topic Message:", topicMessage);
-
-    // Notify via Pusher about the round start and topic
+    // Notify via Pusher about the round start
     await this.pusher.trigger("rounds", "round-start", {
       sessionId: session.id,
       roundNumber: round.round_number,
       startTime: round.start_time,
-      topicMessage,
     });
 
-    // Publish round start and AI response
-    await this.redis.publish(
-      "rounds",
-      JSON.stringify({
-        type: "ROUND_START",
-        sessionId: session.id,
-        roundId: round.id,
-        topicMessage,
-      })
-    );
+    console.log(`Round ${round.round_number} initialization complete.`);
   }
 
-  // Handle round end
   private async handleRoundEnd(session: Session, round: Round) {
     console.log(`Round ${round.round_number} ended for session ${session.id}.`);
 
-    // Retrieve lobbies for the session
-    const lobbies = await this.lobbyService.getAllLobbies(session.id);
+    // Perform any round finalization logic
+    console.log(`Round ${round.round_number} finalized.`);
 
-    console.log("lobbies:", lobbies);
-
-    const roundDecisions: { lobbyId: number; decision: any }[] = [];
-
-    for (const lobby of lobbies) {
-      // Fetch forum messages for the lobby
-      const forumMessages = await this.forumService.getMessages(lobby.id);
-
-      // Send messages and remaining players to the AI for decision
-      const aiResponse = await this.apiClient.post<AIResponse>(
-        `/${this.agentId}/decideEliminations/${lobby.id}`,
-        {
-          lobby_id: lobby.id,
-          forum_messages: forumMessages,
-          remaining_players: lobby.players.map(
-            (player) => player.wallet_address
-          ),
-        }
-      );
-
-      console.log(`AI Response for lobby ${lobby.id}:`, aiResponse);
-
-      // Process AI decision
-      const eliminatedPlayers = aiResponse.data?.eliminatedPlayers || [];
-      const announcement =
-        aiResponse.data?.announcement || "No elimination this round.";
-
-      // Update Redis for the lobby
-      lobby.players = lobby.players.filter(
-        (player) => !eliminatedPlayers.includes(player.wallet_address)
-      );
-      await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
-
-      // Notify players in the lobby via Pusher
-      await this.pusher.trigger(`lobby-${lobby.id}`, "round-end", {
-        announcement,
-        eliminatedPlayers,
-      });
-
-      // Record the decision for the round
-      roundDecisions.push({ lobbyId: lobby.id, decision: aiResponse.data });
-
-      console.log(`Processed round-end for lobby ${lobby.id}`);
-    }
-
-    // Log the round decisions or save them to the database if needed
-    console.log(`Round ${round.round_number} decisions:`, roundDecisions);
-
-    // Notify via Pusher at the session level
+    // Notify via Pusher
     await this.pusher.trigger("sessions", "round-end", {
       sessionId: session.id,
       roundNumber: round.round_number,
-      decisions: roundDecisions,
     });
 
-    console.log(`Round ${round.round_number} ended and decisions published.`);
+    console.log(`Round ${round.round_number} ended and notifications sent.`);
   }
 
-  // Handle voting phase
-  private async handleVotingPhase(session: Session, lobby: Lobby) {
-    console.log(`Voting phase started for lobby ${lobby.id}.`);
-
-    // Notify players about the voting phase
-    await this.pusher.trigger(`lobby-${lobby.id}`, "voting-start", {
-      lobbyId: lobby.id,
-      message: "Vote to continue the game or share the prize.",
-    });
-
-    // Initialize Redis key for voting
-    const votingKey = `session:${session.id}:lobby:${lobby.id}:votes`;
-    await this.redis.del(votingKey); // Clear any existing votes
-
-    // Fetch votes from Redis
-    const yesVotes = await this.redis.smembers(`${votingKey}:yes`);
-    const noVotes = await this.redis.smembers(`${votingKey}:no`);
-
+  private async handleVotingStart(session: Session, round: Round) {
     console.log(
-      `Votes for lobby ${lobby.id}: YES=${yesVotes.length}, NO=${noVotes.length}`
+      `Voting started for round ${round.round_number} in session ${session.id}.`
     );
 
-    if (noVotes.length >= yesVotes.length) {
-      // Majority voted to continue
-      console.log(`Lobby ${lobby.id} voted to continue.`);
-      await this.pusher.trigger(`lobby-${lobby.id}`, "voting-result", {
-        lobbyId: lobby.id,
-        result: "continue",
-      });
-    } else {
-      // Majority voted to share the prize
-      console.log(`Lobby ${lobby.id} voted to share the prize.`);
-      await this.pusher.trigger(`lobby-${lobby.id}`, "voting-result", {
-        lobbyId: lobby.id,
-        result: "share",
-      });
+    // Notify players about the voting phase
+    await this.pusher.trigger("rounds", "voting-start", {
+      sessionId: session.id,
+      roundNumber: round.round_number,
+      votingStartTime: round.voting_start_time,
+      votingEndTime: round.voting_end_time,
+    });
 
-      // End the session for this lobby
-      await this.lobbyService.updateLobbyStatus(
-        session.id,
-        lobby.id,
-        LobbyStatus.COMPLETED
-      );
+    // Initialize voting storage (optional, based on Redis design)
+    const lobbies = await this.lobbyService.getActiveLobbies(session.id);
+    for (const lobby of lobbies) {
+      const votingKey = `voting:session:${session.id}:lobby:${lobby.id}:round:${round.id}`;
+      await this.redis.del(votingKey); // Clear any previous votes
     }
   }
 
-  // Handle session end
+  private async handleVotingEnd(session: Session, round: Round): Promise<void> {
+    console.log(
+      `Voting ended for round ${round.round_number} in session ${session.id}.`
+    );
+
+    const activeLobbies = await this.lobbyService.getActiveLobbies(session.id);
+
+    if (activeLobbies.length === 0) {
+      console.log("No active lobbies found for voting.");
+      return;
+    }
+
+    for (const lobby of activeLobbies) {
+      const lobbyResults = await this.lobbyService.getVotingResults(
+        session.id,
+        lobby.id,
+        round.id
+      );
+
+      if (!lobbyResults) {
+        console.warn(`No voting results found for lobby ${lobby.id}.`);
+        continue;
+      }
+
+      // Calculate votes for "continue" and "end"
+      const continueVotes = lobbyResults["continue"] || 0;
+      const shareVotes = lobbyResults["share"] || 0;
+
+      console.log(
+        `Lobby ${lobby.id} voting results: CONT=${continueVotes}, END=${shareVotes}`
+      );
+      // Determine the outcome for the lobby
+      if (continueVotes >= shareVotes) {
+        // Majority voted to continue
+        console.log(`Lobby ${lobby.id} voted to continue.`);
+        await this.pusher.trigger(`lobby-${lobby.id}`, "voting-result", {
+          lobbyId: lobby.id,
+          result: "continue",
+        });
+      } else {
+        // Majority voted to end the lobby
+        console.log(`Lobby ${lobby.id} voted to end and share the prize.`);
+        await this.pusher.trigger(`lobby-${lobby.id}`, "voting-result", {
+          lobbyId: lobby.id,
+          result: "end",
+        });
+
+        // Update lobby status to completed
+        await this.lobbyService.updateLobbyStatus(
+          session.id,
+          lobby.id,
+          LobbyStatus.COMPLETED
+        );
+      }
+    }
+
+    console.log(
+      `Voting phase for round ${round.round_number} in session ${session.id} has concluded.`
+    );
+  }
+
   private async handleSessionEnd(session: Session) {
     console.log(`Session ${session.id} ended.`);
 
@@ -501,17 +685,12 @@ export class RitualWorker {
       endTime: session.end_time,
     });
 
-    await this.redis.publish(
-      "sessions",
-      JSON.stringify({ type: "SESSION_END", sessionId: session.id })
-    );
-
     // Redis cleanup: remove all keys related to the session and its lobbies
     try {
       console.log(`Cleaning up Redis data for session ${session.id}...`);
 
       // Remove session-specific data
-      await this.redis.del(`session:${session.id}`);
+      await this.redis.del(`session:${session.id}:players`);
 
       // Remove all lobby-specific data
       const lobbies = await this.lobbyService.getAllLobbies(session.id);
@@ -519,6 +698,7 @@ export class RitualWorker {
         await this.redis.del(`lobby:${lobby.id}:players`);
         await this.redis.del(`lobby:${lobby.id}:votes`);
         await this.redis.del(`lobby:${lobby.id}`);
+        await this.redis.del(`lobby:${lobby.id}:forum`);
       }
 
       console.log(`Redis data for session ${session.id} cleaned up.`);

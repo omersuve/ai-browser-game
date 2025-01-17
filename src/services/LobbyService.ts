@@ -55,61 +55,64 @@ export default class LobbyService {
   }
 
   /**
-   * Adds a player to a lobby.
+   * Retrieves the voting results for a specific lobby and round.
    * @param sessionId - The session ID.
    * @param lobbyId - The lobby ID.
-   * @param player - The player to add.
-   * @param maxPlayers - The max number of players allowed.
+   * @param roundId - The round ID.
+   * @returns An object summarizing the voting results.
    */
-  async addPlayerToLobby(
+  async getVotingResults(
     sessionId: number,
     lobbyId: number,
-    player: Player,
-    maxPlayers: number
-  ): Promise<void> {
-    const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
-    const lobbyData = await this.redisService.get(lobbyKey);
+    roundId: number
+  ): Promise<{ [key: string]: number }> {
+    const votingKey = `voting:session:${sessionId}:lobby:${lobbyId}:round:${roundId}`;
 
-    if (!lobbyData) {
-      throw new Error(`Lobby does not exist for ${lobbyKey}`);
+    // Fetch all votes stored under the key
+    const votes = await this.redisService.lrange(votingKey, 0, -1);
+
+    if (!votes || votes.length === 0) {
+      console.warn(`No votes found for ${votingKey}`);
+      return {};
     }
 
-    const lobby: Lobby = JSON.parse(lobbyData);
-    if (lobby.players.length >= maxPlayers) {
-      throw new Error(`Lobby ${lobbyId} is already full`);
+    // Count votes
+    const results: { [key: string]: number } = {};
+    for (const vote of votes) {
+      results[vote] = (results[vote] || 0) + 1;
     }
 
-    lobby.players.push(player);
-
-    await this.redisService.set(lobbyKey, JSON.stringify(lobby));
-    console.log(`Added player ${player.wallet_address} to lobby: ${lobbyKey}`);
+    console.log(`Voting results for ${votingKey}:`, results);
+    return results;
   }
 
   /**
-   * Removes a player from a lobby.
+   * Retrieves the remaining players in all active lobbies of a session.
    * @param sessionId - The session ID.
-   * @param lobbyId - The lobby ID.
-   * @param walletAddress - The player's wallet address to remove.
+   * @returns An array of remaining players across all lobbies.
    */
-  async removePlayerFromLobby(
+  async getRemainingPlayersByLobby(
     sessionId: number,
-    lobbyId: number,
-    walletAddress: string
-  ): Promise<void> {
-    const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
-    const lobbyData = await this.redisService.get(lobbyKey);
+    lobbyId: number
+  ): Promise<Player[]> {
+    const lobby = await this.getLobby(sessionId, lobbyId);
 
-    if (!lobbyData) {
-      throw new Error(`Lobby does not exist for ${lobbyKey}`);
+    if (!lobby) {
+      throw new Error(
+        `Lobby ${lobbyId} does not exist in session ${sessionId}.`
+      );
     }
 
-    const lobby: Lobby = JSON.parse(lobbyData);
-    lobby.players = lobby.players.filter(
-      (player) => player.wallet_address !== walletAddress
+    if (lobby.status !== LobbyStatus.ACTIVE) {
+      console.log(`Lobby ${lobbyId} is not active.`);
+      return [];
+    }
+
+    console.log(
+      `Found ${lobby.players.length} remaining players in lobby ${lobbyId} of session ${sessionId}.`
     );
 
-    await this.redisService.set(lobbyKey, JSON.stringify(lobby));
-    console.log(`Removed player ${walletAddress} from lobby: ${lobbyKey}`);
+    return lobby.players;
   }
 
   /**
@@ -120,13 +123,8 @@ export default class LobbyService {
    */
   async getLobby(sessionId: number, lobbyId: number): Promise<Lobby | null> {
     const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
-    const lobbyData = await this.redisService.get(lobbyKey);
-
-    if (!lobbyData) {
-      return null;
-    }
-
-    return JSON.parse(lobbyData) as Lobby;
+    const lobbyData: Lobby | null = await this.redisService.get(lobbyKey);
+    return lobbyData;
   }
 
   /**
@@ -167,6 +165,24 @@ export default class LobbyService {
       `Retrieved ${lobbies.length} lobbies for session ${sessionId}.`
     );
     return lobbies;
+  }
+
+  /**
+   * Retrieves all active lobbies for a given session.
+   * @param sessionId - The session ID.
+   * @returns An array of active lobbies.
+   */
+  async getActiveLobbies(sessionId: number): Promise<Lobby[]> {
+    const allLobbies = await this.getAllLobbies(sessionId); // Fetch all lobbies
+    const activeLobbies = allLobbies.filter(
+      (lobby) => lobby.status === LobbyStatus.ACTIVE
+    );
+
+    console.log(
+      `Retrieved ${activeLobbies.length} active lobbies for session ${sessionId}.`
+    );
+
+    return activeLobbies;
   }
 
   /**
@@ -277,10 +293,9 @@ export default class LobbyService {
       throw new Error(`Lobby does not exist for ${lobbyKey}`);
     }
 
-    const lobby: Lobby = JSON.parse(lobbyData);
-    lobby.status = status;
+    lobbyData.status = status;
 
-    await this.redisService.set(lobbyKey, JSON.stringify(lobby));
+    await this.redisService.set(lobbyKey, JSON.stringify(lobbyData));
     console.log(`Updated lobby ${lobbyId} status to ${status}`);
   }
 }
