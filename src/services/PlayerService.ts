@@ -143,7 +143,7 @@ export default class PlayerService {
       await this.redis.sadd(sessionLobbiesKey, [lobbyKey]);
 
       // Notify via Pusher
-      await this.pusher.trigger(`lobby-${lobbyId}`, "lobby-created", {
+      await this.pusher.trigger("lobby", "lobby-created", {
         sessionId,
         lobbyId,
         players: lobbyPlayers,

@@ -13,48 +13,6 @@ export default class LobbyService {
   }
 
   /**
-   * Creates a lobby for a session.
-   * @param sessionId - The session ID.
-   * @param lobbyId - The unique ID for the lobby.
-   */
-  async createLobby(
-    sessionId: number,
-    lobbyId: number,
-    players: Player[]
-  ): Promise<void> {
-    const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
-    const sessionLobbiesKey = `${this.lobbyKeyPrefix}:session:${sessionId}:lobbies`;
-
-    const exists = await this.redisService.exists(lobbyKey);
-    if (exists) {
-      console.warn(`Lobby already exists for ${lobbyKey}`);
-      return;
-    }
-
-    const lobby: Lobby = {
-      id: lobbyId,
-      session_id: sessionId,
-      players,
-      created_at: new Date().toISOString(), // Convert to ISO string
-      status: LobbyStatus.ACTIVE,
-    };
-
-    // Store the lobby data in Redis
-    try {
-      await this.redisService.set(lobbyKey, JSON.stringify(lobby));
-      await this.redisService.sadd(sessionLobbiesKey, [lobbyKey]);
-      console.log(`Created lobby: ${lobbyKey}`);
-    } catch (error: any) {
-      console.error(`Failed to store lobby for key: ${lobbyKey}`, error);
-      // Cleanup on failure
-      await this.redisService.del(lobbyKey);
-      throw new Error(`Failed to create lobby: ${error.message}`);
-    }
-
-    console.log(`Created lobby: ${lobbyKey}`);
-  }
-
-  /**
    * Retrieves the voting results for a specific lobby and round.
    * @param sessionId - The session ID.
    * @param lobbyId - The lobby ID.
