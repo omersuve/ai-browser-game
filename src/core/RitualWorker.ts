@@ -387,8 +387,15 @@ export class RitualWorker {
       const forumMessages = await this.forumService.getMessages(lobby.id);
 
       // Send messages and remaining players to the AI for decision
-      const aiResponse = await this.apiClient.get<AIResponse>(
-        `/${this.agentId}/decideEliminations/${lobby.id}`
+      const aiResponse = await this.apiClient.post<AIResponse>(
+        `/decideEliminations`,
+        {
+          agentId: this.agentId,
+          sessionId: session.id,
+          lobbyId: lobby.id,
+          maxRounds: session.total_rounds,
+          currentRound: round.round_number,
+        }
       );
 
       console.log(`AI Response for lobby ${lobby.id}:`, aiResponse);
