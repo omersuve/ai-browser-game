@@ -668,20 +668,7 @@ export class RitualWorker {
     // Redis cleanup: remove all keys related to the session and its lobbies
     try {
       console.log(`Cleaning up Redis data for session ${session.id}...`);
-
-      // Remove session-specific data
-      await this.redis.del(`session:${session.id}:players`);
-
-      // Remove all lobby-specific data
-      const lobbies = await this.lobbyService.getAllLobbies(session.id);
-      for (const lobby of lobbies) {
-        await this.redis.del(`lobby:${lobby.id}:players`);
-        await this.redis.del(`lobby:${lobby.id}:votes`);
-        await this.redis.del(`lobby:${lobby.id}`);
-        await this.redis.del(`lobby:${lobby.id}:forum`);
-      }
-
-      console.log(`Redis data for session ${session.id} cleaned up.`);
+      await this.redis.flushAll();
     } catch (err) {
       console.error(
         `Failed to clean up Redis data for session ${session.id}:`,

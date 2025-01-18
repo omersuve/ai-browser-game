@@ -70,6 +70,18 @@ export class RedisService {
     return result > 0; // Redis returns 1 if the key exists, 0 otherwise
   }
 
+  // Flush all data in Redis
+  async flushAll(): Promise<void> {
+    try {
+      // Using the ioredis client to execute the FLUSHALL command
+      await this.subscriberClient.flushall();
+      console.log("All Redis data has been flushed.");
+    } catch (err) {
+      console.error("Error flushing Redis data:", err);
+      throw err;
+    }
+  }
+
   // Subscribe to a channel
   async subscribe(channel: string, callback: (message: string) => void) {
     await this.subscriberClient.subscribe(channel);
