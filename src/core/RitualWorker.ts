@@ -289,14 +289,6 @@ export class RitualWorker {
 
       case "AI_MESSAGE_END":
         await this.handleAiMessageEnd(session, event.round);
-
-        await this.processEvent(session, {
-          type: "ROUND_START",
-          round: event.round,
-        });
-        break;
-
-      case "ROUND_START":
         console.log("Round started", event.round.round_number);
         await this.handleRoundStart(session, event.round);
         break;
@@ -304,15 +296,7 @@ export class RitualWorker {
       case "ROUND_END":
         await this.handleRoundEnd(session, event.round);
         console.log("Starting elimination phase...");
-        await this.processEvent(session, {
-          type: "ELIMINATION_START",
-          round: event.round,
-        });
-        break;
-
-      case "ELIMINATION_START":
         await this.handleEliminationStart(session, event.round);
-        break;
 
       case "ELIMINATION_END":
         await this.handleEliminationEnd(session, event.round);
@@ -348,14 +332,13 @@ export class RitualWorker {
           }
         }
 
-        break;
-
-      case "VOTING_START":
         await this.handleVotingStart(session, event.round);
+
         break;
 
       case "VOTING_END":
         await this.handleVotingEnd(session, event.round);
+        await this.handleAiMessageStart(session, event.round);
         break;
 
       case "SESSION_END":
@@ -383,9 +366,6 @@ export class RitualWorker {
     }[] = [];
 
     for (const lobby of lobbies) {
-      // Fetch forum messages for the lobby
-      const forumMessages = await this.forumService.getMessages(lobby.id);
-
       // Send messages and remaining players to the AI for decision
       const aiResponse = await this.apiClient.post<AIResponse>(
         `/decideEliminations`,
@@ -494,26 +474,32 @@ export class RitualWorker {
       `AI message phase started for round ${round.round_number} in session ${session.id}.`
     );
 
-    // Fetch AI-generated topic message
-    const aiTopicResponse = await this.apiClient.get(
-      `/${this.agentId}/roundAnnouncement/${round.round_number}` // TODO: ADD LOBBY
-    );
+    // Retrieve lobbies for the session
+    const lobbies = await this.lobbyService.getActiveLobbies(session.id);
+    console.log("lobbies:", lobbies);
 
-    const topicMessage = aiTopicResponse.data || "Discuss your strategy!";
-    console.log("AI Topic Message:", topicMessage);
+    for (const lobby of lobbies) {
+      // Fetch AI-generated topic message
+      const aiTopicResponse = await this.apiClient.get(
+        `/${this.agentId}/roundAnnouncement/${lobby.id}` // TODO: ADD LOBBY
+      );
 
-    // Store in Redis
-    const redisKey = `topic`;
-    await this.redis.set(redisKey, JSON.stringify({ topicMessage }));
+      const topicMessage = aiTopicResponse.data || "Discuss your strategy!";
+      console.log("AI Topic Message:", topicMessage);
 
-    // Notify via Pusher about the AI topic message
-    await this.pusher.trigger("rounds", "ai-message-start", {
-      sessionId: session.id,
-      roundNumber: round.round_number,
-      topicMessage,
-    });
+      // Store in Redis
+      const redisKey = `topic`;
+      await this.redis.set(redisKey, JSON.stringify({ topicMessage }));
 
-    console.log(`AI message for round ${round.round_number} published.`);
+      // Notify via Pusher about the AI topic message
+      await this.pusher.trigger(`lobby-${lobby.id}`, "ai-message-start", {
+        sessionId: session.id,
+        roundNumber: round.round_number,
+        topicMessage,
+      });
+
+      console.log(`AI message for lobby ${lobby.id} published.`);
+    }
   }
 
   private async handleSessionStart(session: Session) {
