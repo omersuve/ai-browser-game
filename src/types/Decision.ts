@@ -1,6 +1,6 @@
 export interface AIResponse {
-  announcement: string;
-  eliminatedPlayers?: string[]; // Wallet addresses of eliminated players
+  response: any[];
+  success: boolean; // Wallet addresses of eliminated players
 }
 
 export interface LobbyData {

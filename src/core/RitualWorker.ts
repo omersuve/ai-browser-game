@@ -359,12 +359,6 @@ export class RitualWorker {
     const lobbies = await this.lobbyService.getActiveLobbies(session.id);
     console.log("lobbies:", lobbies);
 
-    const eliminationResults: {
-      lobbyId: number;
-      eliminatedPlayers: string[];
-      announcement: string;
-    }[] = [];
-
     for (const lobby of lobbies) {
       // Send messages and remaining players to the AI for decision
       const aiResponse = await this.apiClient.post<AIResponse>(
@@ -381,45 +375,32 @@ export class RitualWorker {
       console.log(`AI Response for lobby ${lobby.id}:`, aiResponse);
 
       // Extract AI decisions
-      const eliminatedPlayers = aiResponse.data?.eliminatedPlayers || [];
+      const eliminatedPlayers = aiResponse.data?.response || [];
       console.log("Eliminated Players", eliminatedPlayers);
 
-      const announcement =
-        aiResponse.data?.announcement || "No elimination this round.";
-
-      // Update lobby players
+      // Update lobby players (exclude eliminated players by walletAddress)
       lobby.players = lobby.players.filter(
-        (player) => !eliminatedPlayers.includes(player.wallet_address)
+        (player) =>
+          !eliminatedPlayers.some(
+            (item) => item.participant === player.wallet_address
+          )
       );
+
       console.log("Lobby players after eliminated Players", lobby.players);
 
       await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
 
       // Store in Redis
       const redisKey = `elimination:lobby:${lobby.id}`;
-      await this.redis.set(redisKey, JSON.stringify({ announcement }));
+      await this.redis.set(redisKey, JSON.stringify({ eliminatedPlayers }));
 
       // Notify players via Pusher
       await this.pusher.trigger(`lobby-${lobby.id}`, "elimination-start", {
-        announcement,
         eliminatedPlayers,
-      });
-
-      eliminationResults.push({
-        lobbyId: lobby.id,
-        eliminatedPlayers,
-        announcement,
       });
 
       console.log(`Elimination processed for lobby ${lobby.id}.`);
     }
-
-    console.log(
-      `Elimination results for round ${round.round_number}:`,
-      eliminationResults
-    );
-
-    return eliminationResults; // Return results for further processing if needed
   }
 
   private async handleEliminationEnd(
