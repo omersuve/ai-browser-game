@@ -492,7 +492,7 @@ export class RitualWorker {
       console.log("AI Topic Message:", topicMessage);
 
       // Store in Redis
-      const redisKey = `topic`;
+      const redisKey = `lobby:${lobby.id}:topic`;
       await this.redis.set(redisKey, JSON.stringify({ topicMessage }));
 
       // Notify via Pusher about the AI topic message
