@@ -382,6 +382,8 @@ export class RitualWorker {
 
       // Extract AI decisions
       const eliminatedPlayers = aiResponse.data?.eliminatedPlayers || [];
+      console.log("Eliminated Players", eliminatedPlayers);
+
       const announcement =
         aiResponse.data?.announcement || "No elimination this round.";
 
@@ -389,6 +391,8 @@ export class RitualWorker {
       lobby.players = lobby.players.filter(
         (player) => !eliminatedPlayers.includes(player.wallet_address)
       );
+      console.log("Lobby players after Eliminated Players", lobby.players);
+
       await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
 
       // Store in Redis

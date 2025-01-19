@@ -163,22 +163,18 @@ export default class LobbyService {
   async updateLobby(
     sessionId: number,
     lobbyId: number,
-    updatedData: Partial<Lobby>
+    lobby: Lobby
   ): Promise<void> {
     const lobbyKey = this.getLobbyKey(sessionId, lobbyId);
-    const lobbyData: Lobby = await this.redisService.get(lobbyKey);
 
-    if (!lobbyData) {
+    if (!lobby) {
       throw new Error(`Lobby does not exist for ${lobbyKey}`);
     }
 
-    // Parse existing lobby and merge with updated data
-    const updatedLobby = { ...lobbyData, ...updatedData };
-
     // Save the updated lobby back to Redis
-    await this.redisService.set(lobbyKey, JSON.stringify(updatedLobby));
+    await this.redisService.set(lobbyKey, JSON.stringify(lobby));
 
-    console.log(`Updated lobby ${lobbyId} for session ${sessionId}`);
+    console.log(`Lobby ${lobbyId} updated for session ${sessionId}`);
   }
 
   /**
