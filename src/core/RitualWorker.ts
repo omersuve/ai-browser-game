@@ -391,7 +391,7 @@ export class RitualWorker {
       lobby.players = lobby.players.filter(
         (player) => !eliminatedPlayers.includes(player.wallet_address)
       );
-      console.log("Lobby players after Eliminated Players", lobby.players);
+      console.log("Lobby players after eliminated Players", lobby.players);
 
       await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
 
