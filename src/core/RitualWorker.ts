@@ -471,10 +471,6 @@ export class RitualWorker {
       `AI message phase started for round ${round.round_number} in session ${session.id}.`
     );
 
-    // Retrieve lobbies for the session
-    const lobbies = await this.lobbyService.getActiveLobbies(session.id);
-    console.log("lobbies:", lobbies);
-
     // Fetch AI-generated topic message
     const aiTopicResponse = await this.apiClient.get(
       `/${this.agentId}/roundAnnouncement/${round.round_number}` // TODO: ADD LOBBY
