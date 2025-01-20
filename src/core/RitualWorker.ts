@@ -9,6 +9,7 @@ import {
   AIResponse,
   Lobby,
   LobbyStatus,
+  PLAYER_STATUS,
 } from "../types";
 import LobbyService from "../services/LobbyService";
 import ForumService from "../services/ForumService";
@@ -378,13 +379,21 @@ export class RitualWorker {
       const eliminatedPlayers = aiResponse.data?.response || [];
       console.log("Eliminated Players", eliminatedPlayers);
 
-      // Update lobby players (exclude eliminated players by walletAddress)
-      lobby.players = lobby.players.filter(
-        (player) =>
-          !eliminatedPlayers.some(
+      // Update lobby players (set eliminated status)
+      lobby.players = lobby.players.map((player) => {
+        if (
+          eliminatedPlayers.some(
             (item) => item.participant === player.wallet_address
           )
-      );
+        ) {
+          // Mark the player as eliminated
+          return {
+            ...player,
+            status: PLAYER_STATUS.ELIMINATED,
+          };
+        }
+        return player; // Keep other players unchanged
+      });
 
       console.log("Lobby players after eliminated Players", lobby.players);
 
@@ -426,6 +435,9 @@ export class RitualWorker {
       await this.pusher.trigger(`lobby-${lobby.id}`, "elimination-end", {
         lobbyId: lobby.id,
         message: "Elimination phase has ended. Prepare for the next phase.",
+        remainingParticipants: lobby.players.map(
+          (player) => player.wallet_address
+        ), // Include remaining participants
       });
 
       console.log(`Lobby ${lobby.id}: Elimination phase concluded.`);
@@ -499,27 +511,28 @@ export class RitualWorker {
     }
 
     // Distribute players into lobbies
-    const lobbies = await this.playerService.distributePlayersToLobbies(
-      session.id,
-      session.max_total_players
-    );
+    this.playerService
+      .distributePlayersToLobbies(session.id, session.max_total_players)
+      .then((lobbies) => {
+        if (lobbies.length === 0) {
+          console.warn(
+            `No lobbies created for session ${session.id} due to no players.`
+          );
+          return; // Exit early as there are no lobbies to process
+        }
 
-    if (lobbies.length === 0) {
-      console.warn(
-        `No lobbies created for session ${session.id} due to no players.`
-      );
-      return; // Exit early as there are no lobbies to process
-    }
+        console.log("lobbies:", lobbies);
 
-    console.log("lobbies:", lobbies);
-
-    // Notify via Pusher
-    await this.pusher.trigger("sessions", "session-start", {
-      sessionId: session.id,
-      startTime: session.start_time,
-    });
-
-    console.log("pusher for session start sent!!!!!!!!!!!!!!!!!!!!!");
+        // Notify via Pusher
+        this.pusher
+          .trigger("sessions", "session-start", {
+            sessionId: session.id,
+            startTime: session.start_time,
+          })
+          .then(() => {
+            console.log("pusher for session start sent!!!!!!!!!!!!!!!!!!!!!");
+          });
+      });
   }
 
   private async handleRoundStart(session: Session, round: Round) {
