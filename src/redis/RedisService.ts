@@ -74,7 +74,7 @@ export class RedisService {
   async flushAll(): Promise<void> {
     try {
       // Using the ioredis client to execute the FLUSHALL command
-      await this.subscriberClient.flushall();
+      await this.keyValueClient.flushall();
       console.log("All Redis data has been flushed.");
     } catch (err) {
       console.error("Error flushing Redis data:", err);
