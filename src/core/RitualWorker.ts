@@ -481,7 +481,7 @@ export class RitualWorker {
     // Notify via Pusher about the AI topic message
     await this.pusher.trigger("rounds", "ai-message-start", {
       sessionId: session.id,
-      roundNumber: round.round_number,
+      round: round,
     });
 
     console.log(`AI message for round ${round.round_number} published.`);
