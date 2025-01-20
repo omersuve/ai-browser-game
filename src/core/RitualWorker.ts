@@ -480,14 +480,12 @@ export class RitualWorker {
       `/${this.agentId}/roundAnnouncement/${round.round_number}` // TODO: ADD LOBBY
     );
 
-    const topicMessage = aiTopicResponse.data || "Discuss your strategy!";
-    console.log("AI Topic Message:", topicMessage);
+    console.log("AI Topic Message:", aiTopicResponse);
 
     // Notify via Pusher about the AI topic message
     await this.pusher.trigger("rounds", "ai-message-start", {
       sessionId: session.id,
       roundNumber: round.round_number,
-      topicMessage,
     });
 
     console.log(`AI message for round ${round.round_number} published.`);
