@@ -502,6 +502,17 @@ export class RitualWorker {
   private async handleSessionStart(session: Session) {
     console.log(`Session ${session.id} started.`);
 
+    // Redis cleanup: remove all keys related to the session and its lobbies
+    try {
+      console.log(`Cleaning up Redis data for session ${session.id}...`);
+      await this.redis.flushAll();
+    } catch (err) {
+      console.error(
+        `Failed to clean up Redis data for session ${session.id}:`,
+        err
+      );
+    }
+
     // Fetch players for the session
     const players = await this.playerService.getPlayers(session.id);
 
