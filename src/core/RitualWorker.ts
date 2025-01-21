@@ -414,8 +414,7 @@ export class RitualWorker {
       const redisKey = `elimination:lobby:${lobby.id}`;
       const existingEliminations = await this.redis.get(redisKey) || {};
 
-      const parsedData = JSON.parse(existingEliminations);
-      combinedEliminations = parsedData.eliminatedPlayers || [];
+      combinedEliminations = existingEliminations.eliminatedPlayers || [];
 
       combinedEliminations = [...combinedEliminations, ...eliminatedPlayers];
 
