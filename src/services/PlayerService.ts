@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import { RedisService } from "../redis/RedisService";
-import { Lobby, LobbyStatus, Player } from "../types";
+import { Lobby, LobbyStatus, Player, PLAYER_STATUS } from "../types";
 import Pusher from "pusher";
 
 export default class PlayerService {
@@ -121,6 +121,18 @@ export default class PlayerService {
       const lobbyKey = `lobby:session:${sessionId}:lobby:${lobbyId}`;
 
       const lobbyPlayers = shuffledPlayers.slice(i, i + maxPlayersPerLobby);
+
+      // Set each player's status as ACTIVE in Redis
+      for (const player of lobbyPlayers) {
+        const playerKey = `lobby:${lobbyId}:player:${player.wallet_address}`;
+        await this.redis.set(
+          playerKey,
+          JSON.stringify({
+            status: PLAYER_STATUS.ACTIVE,
+          })
+        );
+        console.log(`Set player status to ACTIVE in Redis: ${playerKey}`);
+      }
 
       // Create a Lobby object
       const lobby: Lobby = {

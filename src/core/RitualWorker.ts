@@ -386,6 +386,14 @@ export class RitualWorker {
             (item) => item.participant === player.wallet_address
           )
         ) {
+          const playerKey = `lobby:${lobby.id}:player:${player.wallet_address}`;
+          this.redis.set(
+            playerKey,
+            JSON.stringify({
+              status: PLAYER_STATUS.ELIMINATED,
+            })
+          );
+          console.log(`Updated Redis for eliminated player: ${playerKey}`);
           // Mark the player as eliminated
           return {
             ...player,
@@ -639,6 +647,9 @@ export class RitualWorker {
           LobbyStatus.COMPLETED
         );
       }
+      // Reset voting data in Redis
+      await this.redis.clearVotes(lobby.id.toString());
+      console.log(`Voting data reset for lobby ${lobby.id}.`);
     }
 
     console.log(

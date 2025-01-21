@@ -70,6 +70,25 @@ export class RedisService {
     return result > 0; // Redis returns 1 if the key exists, 0 otherwise
   }
 
+  // Clear voting data for a specific lobby
+  async clearVotes(lobbyId: string): Promise<void> {
+    const votesKey = `lobby:${lobbyId}:votes`;
+    const userVotesKey = `lobby:${lobbyId}:userVotes`;
+
+    try {
+      // Reset the fields within the votes hash
+      await this.keyValueClient.hset(votesKey, { continue: 0, share: 0 });
+
+      // Delete all user votes in the userVotes hash
+      await this.keyValueClient.del(userVotesKey);
+
+      console.log(`Votes cleared for lobby: ${lobbyId}`);
+    } catch (err) {
+      console.error(`Error clearing votes for lobby ${lobbyId}:`, err);
+      throw err;
+    }
+  }
+
   // Flush all data in Redis
   async flushAll(): Promise<void> {
     try {
