@@ -409,7 +409,9 @@ export class RitualWorker {
 
       // Store in Redis
       const redisKey = `elimination:lobby:${lobby.id}`;
-      await this.redis.set(redisKey, JSON.stringify({ eliminatedPlayers }));
+      const existingEliminations = this.redis.get(redisKey) || {};
+
+      await this.redis.set(redisKey, JSON.stringify({ ...existingEliminations, ...eliminatedPlayers }));
 
       // Notify players via Pusher
       await this.pusher.trigger(`lobby-${lobby.id}`, "elimination-start", {
