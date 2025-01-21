@@ -405,18 +405,22 @@ export class RitualWorker {
 
       console.log("Lobby players after eliminated Players", lobby.players);
 
+
       await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
+
+      let combinedEliminations = [];
 
       // Store in Redis
       const redisKey = `elimination:lobby:${lobby.id}`;
-      // const existingEliminations = this.redis.get(redisKey) || {};
+      const existingEliminations = await this.redis.get(redisKey) || {};
 
-      // const combinedEliminations = [
-      //   ...existingEliminations.eliminatedPlayers,
-      //   ...eliminatedPlayers
-      // ];
+      const parsedData = JSON.parse(existingEliminations);
+      combinedEliminations = parsedData.eliminatedPlayers || [];
 
-      await this.redis.set(redisKey, JSON.stringify({ eliminatedPlayers }));
+      combinedEliminations = [...combinedEliminations, ...eliminatedPlayers];
+
+
+      await this.redis.set(redisKey, JSON.stringify({ eliminatedPlayers: combinedEliminations }));
 
 
       // Notify players via Pusher
