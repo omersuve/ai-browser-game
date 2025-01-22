@@ -96,7 +96,7 @@ export class RitualWorker {
             end_time AT TIME ZONE 'UTC' AS end_time, 
             created_at AT TIME ZONE 'UTC' AS created_at 
      FROM sessions 
-     WHERE start_time <= NOW() AT TIME ZONE 'UTC' AND end_time >= NOW() AT TIME ZONE 'UTC' 
+     WHERE start_time <= NOW() AT TIME ZONE 'UTC' AND end_time >= NOW() AT TIME ZONE 'UTC' and completed = false 
      LIMIT 1`
     );
     return result.rows[0] || null;
@@ -681,6 +681,13 @@ export class RitualWorker {
       };
     }
     console.log(`Session ${session.id} ended.`);
+    // Mark the session as completed in the database
+    try {
+      await this.db.query('UPDATE sessions SET completed = TRUE WHERE id = $1', [session.id]);
+      console.log(`Session ${session.id} marked as completed in the database.`);
+    } catch (err) {
+      console.error(`Failed to update session ${session.id} as completed:`, err);
+    }
 
     // Notify via Pusher
     await this.pusher.trigger("sessions", "session-end", {
