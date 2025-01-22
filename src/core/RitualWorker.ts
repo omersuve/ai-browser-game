@@ -513,12 +513,6 @@ export class RitualWorker {
 
     // Redis cleanup: remove all keys related to the session and its lobbies
 
-    const aiTopicResponse = await this.apiClient.get(
-      `/${this.agentId}/roundAnnouncement/${session.total_rounds}` // TODO: ADD LOBBY
-    );
-
-    console.log("AI Topic Message:", aiTopicResponse);
-
 
     try {
       console.log(`Cleaning up Redis data for session ${session.id}...`);
@@ -529,6 +523,13 @@ export class RitualWorker {
         err
       );
     }
+
+    
+    const aiTopicResponse = await this.apiClient.get(
+      `/${this.agentId}/roundAnnouncement/${session.total_rounds}` // TODO: ADD LOBBY
+    );
+
+    console.log("AI Topic Message:", aiTopicResponse);
 
     // Fetch players for the session
     const players = await this.playerService.getPlayers(session.id);
