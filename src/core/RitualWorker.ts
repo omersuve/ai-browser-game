@@ -339,6 +339,8 @@ export class RitualWorker {
               message: "Only one player left. The game has ended.",
               winner: remainingPlayers[0].wallet_address,
             });
+
+            await this.handleAirdrop([remainingPlayers[0].wallet_address]);
           }
         }
 
@@ -524,7 +526,7 @@ export class RitualWorker {
       );
     }
 
-    
+
     const aiTopicResponse = await this.apiClient.get(
       `/${this.agentId}/roundAnnouncement/${session.total_rounds}` // TODO: ADD LOBBY
     );
@@ -688,6 +690,8 @@ export class RitualWorker {
           lobby.id,
           LobbyStatus.COMPLETED
         );
+
+        await this.handleAirdrop(remainingPlayers.map((p) => p.wallet_address));
       }
       // Reset voting data in Redis
       await this.redis.clearVotes(lobby.id.toString());
@@ -697,6 +701,24 @@ export class RitualWorker {
     console.log(
       `Voting phase for round ${round.round_number} in session ${session.id} has concluded.`
     );
+  }
+
+  private async handleAirdrop(winners: string[]) {
+    console.log("Airdropping to winners:", winners);
+
+
+    // Perform airdrop to the winner
+    try {
+      await this.apiClient.post("/airdrop", {
+        agentId: this.agentId,
+        winners: winners,
+        amount: 1000, // TODO: Define the airdrop amount
+      });
+      console.log(`Airdropped to ${winners}.`);
+    } catch (err) {
+      console.error(`Failed to airdrop to ${winners}:`, err);
+    }
+
   }
 
   private async handleSessionEnd(session: Session) {
