@@ -81,7 +81,7 @@ export default class PlayerService {
     }
 
     const updatedPlayerData = {
-      ...JSON.parse(playerData),
+      ...playerData,
       status,
     };
 
