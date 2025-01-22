@@ -27,18 +27,14 @@ export default class LobbyService {
     const votingKey = `lobby:${lobbyId}:votes`;
 
     // Fetch all votes stored under the key
-    const votes = await this.redisService.lrange(votingKey, 0, -1);
-
-    if (!votes || votes.length === 0) {
-      console.warn(`No votes found for ${votingKey}`);
-      return {};
-    }
+    const shareVotes = await this.redisService.hget(votingKey, "share");
+    const continueVotes = await this.redisService.hget(votingKey, "continue");
 
     // Count votes
-    const results: { [key: string]: number } = {};
-    for (const vote of votes) {
-      results[vote] = (results[vote] || 0);
-    }
+    const results = {
+      share: parseInt(shareVotes || "0", 10),
+      continue: parseInt(continueVotes || "0", 10),
+    };
 
     console.log(`Voting results for ${votingKey}:`, results);
     return results;

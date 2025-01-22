@@ -89,6 +89,10 @@ export class RedisService {
     }
   }
 
+  async hget(key: string, field: string): Promise<string | null> {
+    return this.keyValueClient.hget(key, field);
+  }
+
   // Flush all data in Redis
   async flushAll(): Promise<void> {
     try {
