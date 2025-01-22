@@ -15,38 +15,6 @@ export default class PlayerService {
   }
 
   /**
-   * Adds a player to a session.
-   * @param sessionId - The session ID.
-   * @param walletAddress - The wallet address of the player.
-   */
-  async addPlayer(sessionId: number, walletAddress: string): Promise<void> {
-    // Check if the player already exists in Redis or DB
-    const key = `session:${sessionId}:players`;
-    const existsInRedis = await this.redis.sismember(key, walletAddress);
-
-    if (existsInRedis) {
-      throw new Error(
-        `Player ${walletAddress} already joined session ${sessionId}`
-      );
-    }
-
-    // Add the player to PostgreSQL
-    await this.db.query(
-      `INSERT INTO players (session_id, wallet_address, joined_at)
-       VALUES ($1, $2, (NOW() AT TIME ZONE 'UTC'))`,
-      [sessionId, walletAddress]
-    );
-
-    // Cache the player in Redis
-    await this.redis.sadd(key, [walletAddress]);
-
-    // Notify via Pusher
-    await this.pusher.trigger(`session-${sessionId}`, "player-joined", {
-      walletAddress,
-    });
-  }
-
-  /**
    * Fetches all players for a session.
    * @param sessionId - The session ID.
    * @returns An array of players.
@@ -90,6 +58,38 @@ export default class PlayerService {
     }
 
     return players;
+  }
+
+  /**
+   * Updates the status of a player in Redis.
+   * @param lobbyId - The lobby ID.
+   * @param walletAddress - The wallet address of the player.
+   * @param status - The new status of the player.
+   */
+  async updatePlayerStatus(
+    lobbyId: number,
+    walletAddress: string,
+    status: PLAYER_STATUS
+  ): Promise<void> {
+    const playerKey = `lobby:${lobbyId}:player:${walletAddress}`;
+    const playerData = await this.redis.get(playerKey);
+
+    if (!playerData) {
+      throw new Error(
+        `Player with wallet address ${walletAddress} not found in lobby ${lobbyId}.`
+      );
+    }
+
+    const updatedPlayerData = {
+      ...JSON.parse(playerData),
+      status,
+    };
+
+    // Update the player's status in Redis
+    await this.redis.set(playerKey, JSON.stringify(updatedPlayerData));
+    console.log(
+      `Updated status for player ${walletAddress} in lobby ${lobbyId} to ${status}.`
+    );
   }
 
   /**

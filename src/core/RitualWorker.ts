@@ -327,10 +327,17 @@ export class RitualWorker {
               LobbyStatus.COMPLETED
             );
 
+            await this.playerService.updatePlayerStatus(
+              lobby.id,
+              remainingPlayers[0].wallet_address,
+              PLAYER_STATUS.WINNER
+            );
+
             // Notify via Pusher
             await this.pusher.trigger(`lobby-${lobby.id}`, "game-end", {
               lobbyId: lobby.id,
               message: "Only one player left. The game has ended.",
+              winner: remainingPlayers[0].wallet_address,
             });
           }
         }
@@ -648,9 +655,26 @@ export class RitualWorker {
       } else {
         // Majority voted to end the lobby
         console.log(`Lobby ${lobby.id} voted to end and share the prize.`);
+
+        // Determine the winners (players with ACTIVE status)
+        const remainingPlayers =
+          await this.lobbyService.getRemainingPlayersByLobby(
+            session.id,
+            lobby.id
+          );
+
+        for (const player of remainingPlayers) {
+          await this.playerService.updatePlayerStatus(
+            lobby.id,
+            player.wallet_address,
+            PLAYER_STATUS.WINNER
+          );
+        }
+
         await this.pusher.trigger(`lobby-${lobby.id}`, "voting-result", {
           lobbyId: lobby.id,
           result: "share",
+          winners: remainingPlayers.map((p) => p.wallet_address),
         });
 
         // Update lobby status to completed
