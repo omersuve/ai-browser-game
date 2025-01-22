@@ -159,6 +159,9 @@ export class RitualWorker {
       if (nextEvent.type === "SESSION_END") {
         break; // No need to process further after session ends
       }
+      if (session.game_status?.ended_early) {
+        break;
+      }
     }
 
     console.log(`Session ${session.id} monitoring completed.`);
@@ -658,7 +661,7 @@ export class RitualWorker {
           LobbyStatus.COMPLETED
         );
 
-        await this.handleSessionEnd(session);
+        await this.handleSessionEnd(session, true);
       }
       // Reset voting data in Redis
       await this.redis.clearVotes(lobby.id.toString());
@@ -670,7 +673,13 @@ export class RitualWorker {
     );
   }
 
-  private async handleSessionEnd(session: Session) {
+  private async handleSessionEnd(session: Session, withVote = false) {
+    if (withVote) {
+      console.log(`Session ${session.id} ended with voting.`);
+      session.game_status = {
+        ended_early: true
+      };
+    }
     console.log(`Session ${session.id} ended.`);
 
     // Notify via Pusher
