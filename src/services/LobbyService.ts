@@ -1,6 +1,6 @@
 import { RedisService } from "../redis/RedisService";
 import Pusher from "pusher";
-import { Player, Lobby, LobbyStatus } from "../types";
+import { Player, Lobby, LobbyStatus, PLAYER_STATUS } from "../types";
 
 export default class LobbyService {
   private redisService: RedisService;
@@ -51,6 +51,8 @@ export default class LobbyService {
   ): Promise<Player[]> {
     const lobby = await this.getLobby(sessionId, lobbyId);
 
+    console.log("lobby", lobby);
+
     if (!lobby) {
       throw new Error(
         `Lobby ${lobbyId} does not exist in session ${sessionId}.`
@@ -61,12 +63,16 @@ export default class LobbyService {
       console.log(`Lobby ${lobbyId} is not active.`);
       return [];
     }
-
-    console.log(
-      `Found ${lobby.players.length} remaining players in lobby ${lobbyId} of session ${sessionId}.`
+    // Filter players with status as ACTIVE
+    const activePlayers = lobby.players.filter(
+      (player) => player.status === PLAYER_STATUS.ACTIVE
     );
 
-    return lobby.players;
+    console.log(
+      `Found ${activePlayers.length} active players in lobby ${lobbyId} of session ${sessionId}.`
+    );
+
+    return activePlayers;
   }
 
   /**

@@ -159,7 +159,6 @@ export class RitualWorker {
       if (nextEvent.type === "SESSION_END") {
         break; // No need to process further after session ends
       }
-      
     }
 
     console.log(`Session ${session.id} monitoring completed.`);
@@ -314,6 +313,8 @@ export class RitualWorker {
               lobby.id
             );
 
+          console.log("remainingPlayers", remainingPlayers);
+
           if (remainingPlayers.length === 1) {
             console.log(
               `Only one player left in lobby ${lobby.id}. Ending game for this lobby.`
@@ -406,22 +407,22 @@ export class RitualWorker {
 
       console.log("Lobby players after eliminated Players", lobby.players);
 
-
       await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
 
       let combinedEliminations = [];
 
       // Store in Redis
       const redisKey = `elimination:lobby:${lobby.id}`;
-      const existingEliminations = await this.redis.get(redisKey) || {};
+      const existingEliminations = (await this.redis.get(redisKey)) || {};
 
       combinedEliminations = existingEliminations.eliminatedPlayers || [];
 
       combinedEliminations = [...combinedEliminations, ...eliminatedPlayers];
 
-
-      await this.redis.set(redisKey, JSON.stringify({ eliminatedPlayers: combinedEliminations }));
-
+      await this.redis.set(
+        redisKey,
+        JSON.stringify({ eliminatedPlayers: combinedEliminations })
+      );
 
       // Notify players via Pusher
       await this.pusher.trigger(`lobby-${lobby.id}`, "elimination-start", {
@@ -670,14 +671,19 @@ export class RitualWorker {
   }
 
   private async handleSessionEnd(session: Session) {
-  
     console.log(`Session ${session.id} ended.`);
     // Mark the session as completed in the database
     try {
-      await this.db.query('UPDATE sessions SET completed = TRUE WHERE id = $1', [session.id]);
+      await this.db.query(
+        "UPDATE sessions SET completed = TRUE WHERE id = $1",
+        [session.id]
+      );
       console.log(`Session ${session.id} marked as completed in the database.`);
     } catch (err) {
-      console.error(`Failed to update session ${session.id} as completed:`, err);
+      console.error(
+        `Failed to update session ${session.id} as completed:`,
+        err
+      );
     }
 
     // Notify via Pusher
