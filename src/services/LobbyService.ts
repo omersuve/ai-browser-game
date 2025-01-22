@@ -24,7 +24,7 @@ export default class LobbyService {
     lobbyId: number,
     roundId: number
   ): Promise<{ [key: string]: number }> {
-    const votingKey = `voting:session:${sessionId}:lobby:${lobbyId}:round:${roundId}`;
+    const votingKey = `lobby:${lobbyId}:votes`;
 
     // Fetch all votes stored under the key
     const votes = await this.redisService.lrange(votingKey, 0, -1);
@@ -37,7 +37,7 @@ export default class LobbyService {
     // Count votes
     const results: { [key: string]: number } = {};
     for (const vote of votes) {
-      results[vote] = (results[vote] || 0) + 1;
+      results[vote] = (results[vote] || 0);
     }
 
     console.log(`Voting results for ${votingKey}:`, results);
