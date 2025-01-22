@@ -672,7 +672,6 @@ export class RitualWorker {
         }
 
         await this.pusher.trigger(`lobby-${lobby.id}`, "voting-result", {
-          lobbyId: lobby.id,
           result: "share",
           winners: remainingPlayers.map((p) => p.wallet_address),
         });
