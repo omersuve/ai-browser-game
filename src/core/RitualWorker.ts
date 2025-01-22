@@ -96,7 +96,7 @@ export class RitualWorker {
             end_time AT TIME ZONE 'UTC' AS end_time, 
             created_at AT TIME ZONE 'UTC' AS created_at 
      FROM sessions 
-     WHERE start_time <= NOW() AT TIME ZONE 'UTC' AND end_time >= NOW() AT TIME ZONE 'UTC' and completed = false 
+     WHERE start_time <= NOW() AT TIME ZONE 'UTC' AND end_time >= NOW() AT TIME ZONE 'UTC'
      LIMIT 1`
     );
     return result.rows[0] || null;
@@ -159,9 +159,7 @@ export class RitualWorker {
       if (nextEvent.type === "SESSION_END") {
         break; // No need to process further after session ends
       }
-      if (session.game_status?.ended_early) {
-        break;
-      }
+      
     }
 
     console.log(`Session ${session.id} monitoring completed.`);
@@ -660,8 +658,6 @@ export class RitualWorker {
           lobby.id,
           LobbyStatus.COMPLETED
         );
-
-        await this.handleSessionEnd(session, true);
       }
       // Reset voting data in Redis
       await this.redis.clearVotes(lobby.id.toString());
@@ -673,13 +669,8 @@ export class RitualWorker {
     );
   }
 
-  private async handleSessionEnd(session: Session, withVote = false) {
-    if (withVote) {
-      console.log(`Session ${session.id} ended with voting.`);
-      session.game_status = {
-        ended_early: true
-      };
-    }
+  private async handleSessionEnd(session: Session) {
+  
     console.log(`Session ${session.id} ended.`);
     // Mark the session as completed in the database
     try {
