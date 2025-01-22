@@ -499,13 +499,6 @@ export class RitualWorker {
       `AI message phase started for round ${round.round_number} in session ${session.id}.`
     );
 
-    // Fetch AI-generated topic message
-    const aiTopicResponse = await this.apiClient.get(
-      `/${this.agentId}/roundAnnouncement/${round.round_number}` // TODO: ADD LOBBY
-    );
-
-    console.log("AI Topic Message:", aiTopicResponse);
-
     // Notify via Pusher about the AI topic message
     await this.pusher.trigger("rounds", "ai-message-start", {
       sessionId: session.id,
@@ -519,6 +512,14 @@ export class RitualWorker {
     console.log(`Session ${session.id} started.`);
 
     // Redis cleanup: remove all keys related to the session and its lobbies
+
+    const aiTopicResponse = await this.apiClient.get(
+      `/${this.agentId}/roundAnnouncement/${session.total_rounds}` // TODO: ADD LOBBY
+    );
+
+    console.log("AI Topic Message:", aiTopicResponse);
+
+
     try {
       console.log(`Cleaning up Redis data for session ${session.id}...`);
       await this.redis.flushAll();
