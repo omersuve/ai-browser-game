@@ -657,6 +657,8 @@ export class RitualWorker {
           lobby.id,
           LobbyStatus.COMPLETED
         );
+
+        await this.handleSessionEnd(session);
       }
       // Reset voting data in Redis
       await this.redis.clearVotes(lobby.id.toString());
