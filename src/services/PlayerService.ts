@@ -72,7 +72,9 @@ export default class PlayerService {
     status: PLAYER_STATUS
   ): Promise<void> {
     const playerKey = `lobby:${lobbyId}:player:${walletAddress}`;
-    const playerData = await this.redis.get(playerKey);
+    const playerData: { status: PLAYER_STATUS } = await this.redis.get(
+      playerKey
+    );
 
     if (!playerData) {
       throw new Error(
@@ -81,7 +83,6 @@ export default class PlayerService {
     }
 
     const updatedPlayerData = {
-      ...playerData,
       status,
     };
 
