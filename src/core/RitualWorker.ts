@@ -648,7 +648,7 @@ export class RitualWorker {
         console.log(`Lobby ${lobby.id} voted to end and share the prize.`);
         await this.pusher.trigger(`lobby-${lobby.id}`, "voting-result", {
           lobbyId: lobby.id,
-          result: "end",
+          result: "share",
         });
 
         // Update lobby status to completed
