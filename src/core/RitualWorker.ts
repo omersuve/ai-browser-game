@@ -712,7 +712,7 @@ export class RitualWorker {
       await this.apiClient.post("/airdrop", {
         agentId: this.agentId,
         winners: winners,
-        amount: 1000, // TODO: Define the airdrop amount
+        amount: 5000, // TODO: Define the airdrop amount
       });
       console.log(`Airdropped to ${winners}.`);
     } catch (err) {
