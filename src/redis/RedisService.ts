@@ -42,6 +42,10 @@ export class RedisService {
     return this.keyValueClient.lpush(key, value);
   }
 
+  async ltrim(key: string, start: number, stop: number): Promise<void> {
+    await this.keyValueClient.ltrim(key, start, stop);
+  }
+
   async lrange(key: string, start: number, stop: number): Promise<string[]> {
     return this.keyValueClient.lrange(key, start, stop);
   }

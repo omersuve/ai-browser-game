@@ -550,6 +550,11 @@ export class RitualWorker {
             `No lobbies created for session ${session.id} due to no players.`
           );
           return; // Exit early as there are no lobbies to process
+        } else {
+          for (const lobby of lobbies) {
+            this.redis.lpush(`lobby:${lobby.lobbyId}:forum`, "placeholder");
+            this.redis.ltrim(`lobby:${lobby.lobbyId}:forum`, 1, 0); // Remove the placeholder element
+          }
         }
 
         console.log("lobbies:", lobbies);
