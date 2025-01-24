@@ -528,7 +528,7 @@ export class RitualWorker {
     }
 
 
-    const aiTopicResponse = await this.apiClient.get(
+    const aiTopicResponse = this.apiClient.get(
       `/${this.agentId}/roundAnnouncement/${session.total_rounds}` // TODO: ADD LOBBY
     );
 
