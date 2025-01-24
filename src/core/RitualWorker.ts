@@ -279,6 +279,7 @@ export class RitualWorker {
   }
 
   private async processEvent(session: Session, event: any) {
+    await this.redis.set("currentEvent", event.type);
     switch (event.type) {
       case "SESSION_START":
         await this.handleSessionStart(session);
