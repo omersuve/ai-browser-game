@@ -714,7 +714,7 @@ export class RitualWorker {
   private async handleAirdrop(winners: string[], totalPlayers: number, entryFee: number) {
     console.log("Airdropping to winners:", winners);
 
-    const prizePool = totalPlayers * entryFee * 0.95;
+    const prizePool = totalPlayers * entryFee * 1000 * 0.95;
 
     console.log("Total players:", totalPlayers);
     console.log("Entry fee:", entryFee);
