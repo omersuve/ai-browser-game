@@ -341,7 +341,9 @@ export class RitualWorker {
               winner: remainingPlayers[0].wallet_address,
             });
 
-            await this.handleAirdrop([remainingPlayers[0].wallet_address]);
+
+
+            await this.handleAirdrop([remainingPlayers[0].wallet_address], lobby.players.length, session.entry_fee);
           }
         }
 
@@ -697,7 +699,7 @@ export class RitualWorker {
           LobbyStatus.COMPLETED
         );
 
-        await this.handleAirdrop(remainingPlayers.map((p) => p.wallet_address));
+        await this.handleAirdrop(remainingPlayers.map((p) => p.wallet_address), lobby.players.length, session.entry_fee);
       }
       // Reset voting data in Redis
       await this.redis.clearVotes(lobby.id.toString());
@@ -709,16 +711,21 @@ export class RitualWorker {
     );
   }
 
-  private async handleAirdrop(winners: string[]) {
+  private async handleAirdrop(winners: string[], totalPlayers: number, entryFee: number) {
     console.log("Airdropping to winners:", winners);
 
+    const prizePool = totalPlayers * entryFee * 0.95;
+
+    console.log("Total players:", totalPlayers);
+    console.log("Entry fee:", entryFee);
+    console.log("Prize pool:", prizePool);
 
     // Perform airdrop to the winner
     try {
       await this.apiClient.post("/airdrop", {
         agentId: this.agentId,
         winners: winners,
-        amount: 1022, // TODO: Define the airdrop amount
+        amount: prizePool / winners.length, // TODO: Define the airdrop amount
       });
       console.log(`Airdropped to ${winners}.`);
     } catch (err) {
