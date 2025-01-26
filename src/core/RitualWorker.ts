@@ -365,84 +365,97 @@ export class RitualWorker {
     }
   }
 
+  private async processAllLobbies(
+    lobbies: Lobby[],
+    session: Session,
+    round: Round
+  ) {
+    await Promise.all(
+      lobbies.map((lobby) => this.processLobby(lobby, session, round))
+    );
+  }
+
   private async handleEliminationStart(session: Session, round: Round) {
     console.log(
       `Elimination phase started for round ${round.round_number} in session ${session.id}.`
     );
 
-    // Retrieve lobbies for the session
-    const lobbies = await this.lobbyService.getActiveLobbies(session.id);
-    console.log("lobbies:", lobbies);
+    const activeLobbies = await this.lobbyService.getActiveLobbies(session.id);
 
-    for (const lobby of lobbies) {
-      // Send messages and remaining players to the AI for decision
-      const aiResponse = await this.apiClient.post<AIResponse>(
-        `/decideEliminations`,
-        {
-          agentId: this.agentId,
-          sessionId: session.id,
-          lobbyId: lobby.id,
-          maxRounds: session.total_rounds,
-          currentRound: round.round_number,
-        }
-      );
+    await this.processAllLobbies(activeLobbies, session, round);
 
-      console.log(`AI Response for lobby ${lobby.id}:`, aiResponse);
+    console.log(`Elimination processed for round ${round.round_number}.`);
+  }
 
-      // Extract AI decisions
-      const eliminatedPlayers = aiResponse.data?.response || [];
-      console.log("Eliminated Players", eliminatedPlayers);
+  private async processLobby(lobby: Lobby, session: Session, round: Round) {
+    // Send messages and remaining players to the AI for decision
+    const aiResponse = await this.apiClient.post<AIResponse>(
+      `/decideEliminations`,
+      {
+        agentId: this.agentId,
+        sessionId: session.id,
+        lobbyId: lobby.id,
+        maxRounds: session.total_rounds,
+        currentRound: round.round_number,
+        isDev: false,
+      }
+    );
 
-      // Update lobby players (set eliminated status)
-      lobby.players = lobby.players.map((player) => {
-        if (
-          eliminatedPlayers.some(
-            (item) => item.participant === player.wallet_address
-          )
-        ) {
-          const playerKey = `lobby:${lobby.id}:player:${player.wallet_address}`;
-          this.redis.set(
-            playerKey,
-            JSON.stringify({
-              status: PLAYER_STATUS.ELIMINATED,
-            })
-          );
-          console.log(`Updated Redis for eliminated player: ${playerKey}`);
-          // Mark the player as eliminated
-          return {
-            ...player,
+    console.log(`AI Response for lobby ${lobby.id}:`, aiResponse);
+
+    // Extract AI decisions
+    const eliminatedPlayers = aiResponse.data?.response || [];
+    console.log("Eliminated Players", eliminatedPlayers);
+
+    // Update lobby players (set eliminated status)
+    lobby.players = lobby.players.map((player) => {
+      if (
+        eliminatedPlayers.some(
+          (item) => item.participant === player.wallet_address
+        )
+      ) {
+        const playerKey = `lobby:${lobby.id}:player:${player.wallet_address}`;
+        this.redis.set(
+          playerKey,
+          JSON.stringify({
             status: PLAYER_STATUS.ELIMINATED,
-          };
-        }
-        return player; // Keep other players unchanged
-      });
+          })
+        );
+        console.log(`Updated Redis for eliminated player: ${playerKey}`);
+        // Mark the player as eliminated
+        return {
+          ...player,
+          status: PLAYER_STATUS.ELIMINATED,
+        };
+      }
+      return player; // Keep other players unchanged
+    });
 
-      console.log("Lobby players after eliminated Players", lobby.players);
+    console.log("Lobby players after eliminated Players", lobby.players);
 
-      await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
+    await this.lobbyService.updateLobby(session.id, lobby.id, lobby);
 
-      let combinedEliminations = [];
+    let combinedEliminations = [];
 
-      // Store in Redis
-      const redisKey = `elimination:lobby:${lobby.id}`;
-      const existingEliminations = (await this.redis.get(redisKey)) || {};
+    // Store in Redis
+    const redisKey = `elimination:lobby:${lobby.id}`;
+    const existingEliminations = (await this.redis.get(redisKey)) || {};
 
-      combinedEliminations = existingEliminations.eliminatedPlayers || [];
+    combinedEliminations = existingEliminations.eliminatedPlayers || [];
 
-      combinedEliminations = [...combinedEliminations, ...eliminatedPlayers];
+    combinedEliminations = [...combinedEliminations, ...eliminatedPlayers];
 
-      await this.redis.set(
-        redisKey,
-        JSON.stringify({ eliminatedPlayers: combinedEliminations })
-      );
+    await this.redis.set(
+      redisKey,
+      JSON.stringify({ eliminatedPlayers: combinedEliminations })
+    );
 
-      // Notify players via Pusher
-      await this.pusher.trigger(`lobby-${lobby.id}`, "elimination-start", {
-        eliminatedPlayers,
-      });
+    // Notify players via Pusher
+    await this.pusher.trigger(`lobby-${lobby.id}`, "elimination-start", {
+      eliminatedPlayers,
+    });
 
-      console.log(`Elimination processed for lobby ${lobby.id}.`);
-    }
+    console.log(`Elimination processed for lobby ${lobby.id}.`);
   }
 
   private async handleEliminationEnd(
