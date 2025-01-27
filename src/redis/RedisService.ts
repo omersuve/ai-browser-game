@@ -60,6 +60,16 @@ export class RedisService {
     return this.keyValueClient.sadd(key, members[0], ...members.slice(1));
   }
 
+  // Add this method to the RedisService class
+  async scard(key: string): Promise<number> {
+    try {
+      return await this.keyValueClient.scard(key);
+    } catch (err) {
+      console.error(`Error fetching set cardinality for key ${key}:`, err);
+      throw err;
+    }
+  }
+
   async smembers(key: string): Promise<string[]> {
     return this.keyValueClient.smembers(key);
   }

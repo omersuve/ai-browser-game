@@ -3,7 +3,7 @@ import pusher from "./lib/pusher";
 import { RedisService } from "./redis/RedisService";
 import ApiClient from "./utils/ApiClient";
 import LobbyService from "./services/LobbyService";
-import ForumService from "./services/ForumService";
+import SessionService from "./services/SessionService";
 import PlayerService from "./services/PlayerService";
 import { RitualWorker } from "./core/RitualWorker";
 
@@ -23,7 +23,7 @@ dotenv.config();
 
     // Initialize additional services
     const lobbyService = new LobbyService(redis, pusher);
-    const forumService = new ForumService(redis, pusher);
+    const sessionService = new SessionService(pool, pusher);
     const playerService = new PlayerService(pool, redis, pusher);
 
     // Initialize and start RitualWorker
@@ -33,7 +33,7 @@ dotenv.config();
       pusher,
       apiClient,
       lobbyService,
-      forumService,
+      sessionService,
       playerService
     );
 

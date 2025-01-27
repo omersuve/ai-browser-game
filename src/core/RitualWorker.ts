@@ -12,7 +12,7 @@ import {
   PLAYER_STATUS,
 } from "../types";
 import LobbyService from "../services/LobbyService";
-import ForumService from "../services/ForumService";
+import SessionService from "../services/SessionService";
 import PlayerService from "../services/PlayerService";
 import Pusher from "pusher";
 
@@ -22,7 +22,7 @@ export class RitualWorker {
   private pusher: Pusher;
   private apiClient: ApiClient;
   private lobbyService: LobbyService;
-  private forumService: ForumService;
+  private sessionService: SessionService;
   private playerService: PlayerService;
   private agentId: string;
 
@@ -32,7 +32,7 @@ export class RitualWorker {
     pusher: Pusher,
     apiClient: ApiClient,
     lobbyService: LobbyService,
-    forumService: ForumService,
+    sessionService: SessionService,
     playerService: PlayerService
   ) {
     this.db = db;
@@ -40,7 +40,7 @@ export class RitualWorker {
     this.pusher = pusher;
     this.apiClient = apiClient;
     this.lobbyService = lobbyService;
-    this.forumService = forumService;
+    this.sessionService = sessionService;
     this.playerService = playerService;
     this.agentId = "36a03003-5d9b-0f41-ac69-85e98679b3e8";
   }
@@ -145,7 +145,31 @@ export class RitualWorker {
   private async monitorSession(session: Session) {
     console.log("session", session);
 
+    const sessionPlayersKey = `session:${session.id}:players`;
+
     while (true) {
+      const now = Date.now();
+      // Check if the session has started or is still in the joining period
+      const isSessionStarted = now >= new Date(session.start_time).getTime();
+      if (isSessionStarted) {
+        // Check for players during the joining period
+        const playerCount = await this.redis.scard(sessionPlayersKey);
+        if (playerCount === 0) {
+          console.log(
+            `No players found in session ${session.id} during joining period. Retrying...`
+          );
+          console.log(`Cleaning up Redis data for session ${session.id}...`);
+          await this.redis.flushAll();
+          await this.sessionService.deleteSession(session.id);
+          // Notify via Pusher
+          await this.pusher.trigger("sessions", "session-end", {
+            sessionId: session.id,
+            endTime: session.end_time,
+          });
+          break;
+        }
+      }
+
       const nextEvent = this.getNextEvent(session);
       if (!nextEvent) {
         break;
@@ -341,9 +365,11 @@ export class RitualWorker {
               winner: remainingPlayers[0].wallet_address,
             });
 
-
-
-            await this.handleAirdrop([remainingPlayers[0].wallet_address], lobby.players.length, session.entry_fee);
+            await this.handleAirdrop(
+              [remainingPlayers[0].wallet_address],
+              lobby.players.length,
+              session.entry_fee
+            );
           }
         }
 
@@ -531,7 +557,6 @@ export class RitualWorker {
 
     // Redis cleanup: remove all keys related to the session and its lobbies
 
-
     try {
       console.log(`Cleaning up Redis data for session ${session.id}...`);
       await this.redis.flushAll();
@@ -541,7 +566,6 @@ export class RitualWorker {
         err
       );
     }
-
 
     const aiTopicResponse = this.apiClient.get(
       `/${this.agentId}/roundAnnouncement/${session.total_rounds}` // TODO: ADD LOBBY
@@ -712,7 +736,11 @@ export class RitualWorker {
           LobbyStatus.COMPLETED
         );
 
-        await this.handleAirdrop(remainingPlayers.map((p) => p.wallet_address), lobby.players.length, session.entry_fee);
+        await this.handleAirdrop(
+          remainingPlayers.map((p) => p.wallet_address),
+          lobby.players.length,
+          session.entry_fee
+        );
       }
       // Reset voting data in Redis
       await this.redis.clearVotes(lobby.id.toString());
@@ -724,7 +752,11 @@ export class RitualWorker {
     );
   }
 
-  private async handleAirdrop(winners: string[], totalPlayers: number, entryFee: number) {
+  private async handleAirdrop(
+    winners: string[],
+    totalPlayers: number,
+    entryFee: number
+  ) {
     console.log("Airdropping to winners:", winners);
 
     const prizePool = totalPlayers * entryFee * 1000 * 0.95;
@@ -744,7 +776,6 @@ export class RitualWorker {
     } catch (err) {
       console.error(`Failed to airdrop to ${winners}:`, err);
     }
-
   }
 
   private async handleSessionEnd(session: Session) {
