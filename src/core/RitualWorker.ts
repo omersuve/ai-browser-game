@@ -759,18 +759,29 @@ export class RitualWorker {
   ) {
     console.log("Airdropping to winners:", winners);
 
-    const prizePool = totalPlayers * entryFee * Math.pow(10, 6) * 0.95;
+    let prizePool: number;
 
-    console.log("Total players:", totalPlayers);
-    console.log("Entry fee:", entryFee);
-    console.log("Prize pool:", prizePool);
+    // Handle case where entry fee is 0
+    if (entryFee === 0) {
+      prizePool = 100_000_000_000; // 100k
+      console.log("Entry fee is 0, using fixed prize pool:", prizePool);
+    } else {
+      prizePool = totalPlayers * entryFee * Math.pow(10, 6) * 0.95;
+      console.log("Total players:", totalPlayers);
+      console.log("Entry fee:", entryFee);
+      console.log("Prize pool:", prizePool);
+    }
+
+    // Calculate the integer floor of the airdrop amount
+    const airdropAmount = Math.floor(prizePool / winners.length);
+    console.log("Airdrop amount per winner:", airdropAmount);
 
     // Perform airdrop to the winner
     try {
       await this.apiClient.post("/airdrop", {
         agentId: this.agentId,
         winners: winners,
-        amount: prizePool / winners.length, // TODO: Define the airdrop amount
+        amount: airdropAmount,
       });
       console.log(`Airdropped to ${winners}.`);
     } catch (err) {
