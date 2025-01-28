@@ -258,6 +258,7 @@ export class RitualWorker {
         {
           type: "AI_MESSAGE_START",
           time: new Date(round.ai_message_start).getTime(),
+          round,
         },
         {
           type: "AI_MESSAGE_END",
