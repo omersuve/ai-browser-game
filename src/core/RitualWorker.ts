@@ -429,11 +429,21 @@ export class RitualWorker {
       }
     );
 
+
     console.log(`AI Response for lobby ${lobby.id}:`, aiResponse);
 
     // Extract AI decisions
     const eliminatedPlayers = aiResponse.data?.response || [];
     console.log("Eliminated Players", eliminatedPlayers);
+
+    const commentResponse = this.apiClient.post<AIResponse>(
+      `/eliminationComment`,
+      {
+        agentId: this.agentId,
+        lobbyId: lobby.id,
+        eliminations: eliminatedPlayers
+      }
+    );
 
     // Update lobby players (set eliminated status)
     lobby.players = lobby.players.map((player) => {
