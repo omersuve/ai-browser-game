@@ -379,7 +379,6 @@ export class RitualWorker {
 
       case "VOTING_END":
         await this.handleVotingEnd(session, event.round);
-        await this.handleAiMessageStart(session, event.round);
         break;
 
       case "SESSION_END":
