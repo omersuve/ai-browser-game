@@ -425,6 +425,7 @@ export class RitualWorker {
         lobbyId: lobby.id,
         maxRounds: session.total_rounds,
         currentRound: round.round_number,
+        roundStartTime: round.start_time,
         isDev: false,
       }
     );
