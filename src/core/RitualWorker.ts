@@ -759,7 +759,7 @@ export class RitualWorker {
   ) {
     console.log("Airdropping to winners:", winners);
 
-    const prizePool = totalPlayers * entryFee * Math.pow(10,9) * 0.95;
+    const prizePool = totalPlayers * entryFee * Math.pow(10, 6) * 0.95;
 
     console.log("Total players:", totalPlayers);
     console.log("Entry fee:", entryFee);
