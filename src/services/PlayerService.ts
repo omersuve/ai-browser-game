@@ -114,14 +114,38 @@ export default class PlayerService {
     // Shuffle the players
     const shuffledPlayers = players.sort(() => Math.random() - 0.5);
 
+    // Calculate number of lobbies needed
+    const totalPlayers = shuffledPlayers.length;
+
+    // If total players is less than or equal to maxPlayersPerLobby, create just one lobby
+    let numLobbies = Math.floor(totalPlayers / maxPlayersPerLobby);
+    if (numLobbies === 0 || totalPlayers % maxPlayersPerLobby !== 0) {
+      numLobbies = Math.max(1, numLobbies);
+    }
+
+    // Calculate minimum players per lobby to ensure even distribution
+    const minPlayersPerLobby = Math.floor(totalPlayers / numLobbies);
+    const extraPlayers = totalPlayers - minPlayersPerLobby * numLobbies;
+
     // Divide players into lobbies
     const lobbies = [];
     let lobbyId = 1;
+    let playerIndex = 0;
 
-    for (let i = 0; i < shuffledPlayers.length; i += maxPlayersPerLobby) {
+    for (let i = 0; i < numLobbies; i++) {
       const lobbyKey = `lobby:session:${sessionId}:lobby:${lobbyId}`;
 
-      const lobbyPlayers = shuffledPlayers.slice(i, i + maxPlayersPerLobby);
+      // Add extra players to the last lobby
+      const playersInThisLobby =
+        i === numLobbies - 1
+          ? minPlayersPerLobby + extraPlayers
+          : minPlayersPerLobby;
+
+      const lobbyPlayers = shuffledPlayers.slice(
+        playerIndex,
+        playerIndex + playersInThisLobby
+      );
+      playerIndex += playersInThisLobby;
 
       // Set each player's status as ACTIVE in Redis
       for (const player of lobbyPlayers) {
