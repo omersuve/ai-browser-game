@@ -44,7 +44,7 @@ export default class SessionService {
       const totalDynamicTime =
         new Date(session.end_time).getTime() -
         new Date(session.start_time).getTime() -
-        waitingTime -
+        waitingTime * session.total_rounds -
         staticIntervals * session.total_rounds;
 
       const roundDuration = Math.floor(totalDynamicTime / session.total_rounds);
