@@ -763,7 +763,7 @@ export class RitualWorker {
 
     // Handle case where entry fee is 0
     if (entryFee === 0) {
-      prizePool = 100_000_000_000; // 100k
+      prizePool = 100_000_000; // FOR TEST 100 TOKENS, TODO: CHANGE IT TO 100k
       console.log("Entry fee is 0, using fixed prize pool:", prizePool);
     } else {
       prizePool = totalPlayers * entryFee * Math.pow(10, 6) * 0.95;
