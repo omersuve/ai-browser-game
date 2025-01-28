@@ -324,9 +324,6 @@ export class RitualWorker {
         console.log("Starting elimination phase...");
         await this.handleEliminationStart(session, event.round);
 
-      case "ELIMINATION_END":
-        await this.handleEliminationEnd(session, event.round);
-        // Fetch remaining players for each active lobby
         const activeLobbies = await this.lobbyService.getActiveLobbies(
           session.id
         );
@@ -370,8 +367,13 @@ export class RitualWorker {
               lobby.players.length,
               session.entry_fee
             );
-          }
+          };
         }
+        break;
+
+      case "ELIMINATION_END":
+        await this.handleEliminationEnd(session, event.round);
+        // Fetch remaining players for each active lobby
 
         await this.handleVotingStart(session, event.round);
 
