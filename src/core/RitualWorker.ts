@@ -257,7 +257,7 @@ export class RitualWorker {
       events.push(
         {
           type: "AI_MESSAGE_START",
-          time: new Date(round.ai_message_start).getTime(),
+          time: new Date(new Date(round.ai_message_start).getTime() + 5000).getTime(), // Add 5 seconds
           round,
         },
         {
