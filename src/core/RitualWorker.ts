@@ -773,9 +773,10 @@ export class RitualWorker {
     console.log("Airdropping to winners:", winners);
 
     let prizePool: number;
-
+    console.log("Entry fee type: ", typeof entryFee)
+    console.log("Entry fee1: ", entryFee)
     // Handle case where entry fee is 0
-    if (entryFee === 0) {
+    if (entryFee == 0) {
       prizePool = 100_000_000; // FOR TEST 100 TOKENS, TODO: CHANGE IT TO 100k
       console.log("Entry fee is 0, using fixed prize pool:", prizePool);
     } else {
